@@ -40,9 +40,15 @@ jobs:
           - arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
+            db: mariadb
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+            db: postgresql
           - arch: aarch64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            db: mariadb
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -56,5 +62,5 @@ jobs:
           tags: ncaddon:test
       - name: Unit tests inside the image
         run: docker run --rm -v "$PWD/nextcloud":/src --entrypoint bash ncaddon:test /src/tests/unit/run.sh
-      - name: Integration tests (real MariaDB, real CODE)
-        run: bash nextcloud/tests/integration/run.sh ncaddon:test
+      - name: Integration tests (real ${{ matrix.db }}, real CODE)
+        run: NC_TEST_DB=${{ matrix.db }} bash nextcloud/tests/integration/run.sh ncaddon:test

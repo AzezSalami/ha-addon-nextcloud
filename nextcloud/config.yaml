@@ -1,5 +1,5 @@
 name: Nextcloud (official image + built-in CODE)
-version: "35.0.1-1"
+version: "35.0.1-2"
 slug: nextcloud_official
 description: Nextcloud on the official Debian (glibc) image with Nextcloud Office and the built-in CODE server.
 url: https://github.com/AzezSalami/ha-addon-nextcloud
@@ -25,9 +25,10 @@ options:
   trusted_domains: []
   trusted_proxies:
     - "172.30.32.0/23"
+  db_type: mariadb
   db_mode: supervisor
   db_host: ""
-  db_port: 3306
+  db_port: 0
   db_name: nextcloud
   db_user: ""
   db_password: ""
@@ -51,9 +52,10 @@ schema:
     - str
   trusted_proxies:
     - str
+  db_type: list(mariadb|postgresql)
   db_mode: list(supervisor|external)
   db_host: str?
-  db_port: port
+  db_port: int(0,65535)
   db_name: str
   db_user: str?
   db_password: password?

@@ -9,7 +9,7 @@ nc-backup verify /backup/nextcloud_official/<dir> [--data-against-live]
 nc-backup restore /backup/nextcloud_official/<dir> --yes-restore
 ```
 
-Layout of one backup directory: `db.sql.gz`, `config.tar.gz` (config, custom_apps, themes), `apps.json`,
+Layout of one backup directory: `db.sql.gz` (MariaDB: `mariadb-dump`; PostgreSQL: `pg_dump`), `config.tar.gz` (config, custom_apps, themes), `apps.json`,
 `data/` (rsync snapshot; unchanged files are hard-linked to the previous backup, so each extra backup costs only the delta),
 `SHA256SUMS`, `manifest.json`, and a `.verified` marker written only after verification.
 

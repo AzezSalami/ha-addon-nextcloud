@@ -11,12 +11,12 @@ ARG BUILD_VERSION=dev
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Runtime deps for the add-on scripts and for CODE (proxy.php requires fontconfig,
-# ldconfig, grep, a shell, and `ip` to detect IPv6). mariadb-client = backup/migration.
+# ldconfig, grep, a shell, and `ip` to detect IPv6). mariadb-client/postgresql-client = backup, restore, migration.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         ca-certificates curl jq fontconfig iproute2 procps util-linux \
-        mariadb-client rsync gzip tar coreutils libcap2-bin; \
+        mariadb-client postgresql-client rsync gzip tar coreutils libcap2-bin; \
     rm -rf /var/lib/apt/lists/*; \
     # fail the build if the base is not glibc
     if ldd --version 2>&1 | head -n1 | grep -qi musl; then echo "musl base image not supported" >&2; exit 1; fi

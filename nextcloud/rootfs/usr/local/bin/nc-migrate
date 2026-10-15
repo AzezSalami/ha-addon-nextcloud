@@ -41,6 +41,7 @@ load_source() {
 }
 
 target_db() { # load target (new add-on) DB creds exactly like nc-run does
+    [ "$(opt db_type)" != postgresql ] || die "nc-migrate imports MariaDB/MySQL dumps. Import into a MariaDB-backed add-on first, then convert: occ db:convert-type (see docs/MIGRATION.md)."
     if [ "$(opt db_mode)" = supervisor ]; then
         local svc; svc="$(curl -sSf --max-time 15 -H "Authorization: Bearer ${SUPERVISOR_TOKEN:-}" http://supervisor/services/mysql)" || die "MariaDB service unavailable"
         TH="$(jq -r .data.host <<<"$svc")"; TP="$(jq -r .data.port <<<"$svc")"; TU="$(jq -r .data.username <<<"$svc")"; TPW="$(jq -r .data.password <<<"$svc")"

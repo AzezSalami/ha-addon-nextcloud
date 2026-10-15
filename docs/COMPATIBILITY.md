@@ -22,3 +22,10 @@ for `nextcloud:35.0.1-apache` (amd64, arm64/v8, arm/v5, arm/v7, 386, ppc64le, s3
 
 Nextcloud Office and the CODE app are installed from the Nextcloud app store; their versions are not pinned by the image.
 If the store has no release compatible with a brand-new Nextcloud major, installation reports `incompatible_office`.
+
+## Databases
+
+| Engine | Versions | Discovery | Backup/restore | `nc-migrate` import |
+|---|---|---|---|---|
+| MariaDB / MySQL | MariaDB 10.6+ / 11 (tested with 11), MySQL 8 | Supervisor `mysql` service (MariaDB add-on) or external | `mariadb-dump` / `mariadb` | yes |
+| PostgreSQL | tested with 17; client tools are v17, so the server must not be newer | external only | `pg_dump` / `psql` | no (new installs, backup, restore only) |

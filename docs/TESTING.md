@@ -39,9 +39,9 @@ See the section at the bottom of this file, filled in from the real run output.
 
 ## Recorded results (2026-10-15, Windows 11 + Docker Desktop, linux/amd64, image `ncaddon:test` built from this repository)
 
-Unit suite: **76 passed, 0 failed.**
+Unit suite: **94 passed, 0 failed.**
 
-Integration suite (`tests/integration/run.sh`, real MariaDB 11, Nextcloud 35.0.1, Nextcloud Office + built-in CODE installed from the app store): **23 passed, 0 failed.**
+Integration suite (`tests/integration/run.sh`, Nextcloud 35.0.1, Nextcloud Office + built-in CODE installed from the app store): **23 passed, 0 failed with MariaDB 11, and 23 passed, 0 failed with PostgreSQL 17** (`NC_TEST_DB=postgresql`).
 
 | Check | Result |
 |---|---|
@@ -60,3 +60,6 @@ Bugs found and fixed by these runs: `/var/www/html` is a Docker VOLUME (webroot 
 
 Still **not** verified: arm64, a real Home Assistant Supervisor, Cloudflare Tunnel, a browser DOCX edit/save session, and `nc-migrate import` against real
 LinuxServer data.
+
+PostgreSQL note: Nextcloud's installer creates its own `oc_admin` role, which owns the tables but not the `public` schema, so `nc-backup restore` resets
+the database by dropping only the tables and sequences owned by the connecting role (dropping the schema failed in testing).

@@ -33,6 +33,14 @@ validate_options() {
         [[ "$v" =~ $_re_ipcidr ]] || _err "trusted_proxies entry must be an IP or CIDR: '$v'"
     done < <(jq -r '.trusted_proxies // [] | .[]' "$f")
 
+    case "$(_get db_type)" in
+        ""|mariadb) ;;
+        postgresql)
+            [ "$(_get db_mode)" = external ] || _err "db_type=postgresql requires db_mode=external (Home Assistant has no PostgreSQL service discovery)" ;;
+        *) _err "db_type must be 'mariadb' or 'postgresql'" ;;
+    esac
+    v="$(_get db_port)"
+    if [ -n "$v" ] && { ! [[ "$v" =~ ^[0-9]+$ ]] || [ "$v" -gt 65535 ]; }; then _err "db_port must be 0 (engine default) or 1-65535"; fi
     case "$(_get db_mode)" in
         supervisor) ;;
         external)

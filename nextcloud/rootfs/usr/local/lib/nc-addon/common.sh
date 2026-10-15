@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Shared helpers for the add-on scripts. Source, do not execute.
 
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/db.sh"
+
 NC_OPTIONS_FILE="${NC_OPTIONS_FILE:-/data/options.json}"
 NC_LOG_LEVEL="${NC_LOG_LEVEL:-info}"
 NC_WEBROOT="${NC_WEBROOT:-/data/nextcloud/html}"
@@ -85,16 +88,19 @@ cfg_get() {
     php -r 'include $argv[1]; $v = $CONFIG[$argv[2]] ?? ""; echo is_scalar($v) ? (string)$v : json_encode($v);' "$1" "$2" 2>/dev/null
 }
 
-# db_connect_from_config <config.php>: sets DBH DBP DBN DBU and exports MYSQL_PWD (do not log).
-# shellcheck disable=SC2034  # DBH/DBP/DBN/DBU are consumed by the scripts that source this file
+# db_connect_from_config <config.php>: sets DBTYPE DBH DBP DBN DBU and exports the DB password
+# variables (do not log). Engine helpers live in db.sh.
+# shellcheck disable=SC2034  # these are consumed by the scripts that source this file
 db_connect_from_config() {
-    local c="$1" host
+    local c="$1" host pw
     host="$(cfg_get "$c" dbhost)"
-    DBH="${host%%:*}"; DBP=3306
+    DBTYPE="$(db_kind_to_type "$(cfg_get "$c" dbtype)")"
+    DBH="${host%%:*}"; DBP="$(db_default_port "$DBTYPE")"
     case "$host" in *:*) DBP="${host##*:}" ;; esac
     DBN="$(cfg_get "$c" dbname)"; DBU="$(cfg_get "$c" dbuser)"
-    MYSQL_PWD="$(cfg_get "$c" dbpassword)"; export MYSQL_PWD
-    NC_SECRET_VALUES+=("$MYSQL_PWD")
+    pw="$(cfg_get "$c" dbpassword)"
+    db_set_password "$pw"
+    NC_SECRET_VALUES+=("$pw")
 }
 
 # Code version from a version.php: prints e.g. 35.0.1

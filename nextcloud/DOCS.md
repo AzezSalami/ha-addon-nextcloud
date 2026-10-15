@@ -3,7 +3,7 @@
 ## Install
 
 1. Home Assistant → Settings → Add-ons → Add-on store → ⋮ → Repositories → add this repository's URL.
-2. Install the **MariaDB** add-on (core) and start it (or prepare an external MariaDB 10.6+/11 and use `db_mode: external`).
+2. Install the **MariaDB** add-on (core) and start it (or prepare an external MariaDB 10.6+/11 or PostgreSQL and use `db_mode: external`; see *Using PostgreSQL* below).
 3. Install **Nextcloud (official image + built-in CODE)**. Building locally from the Dockerfile takes a few minutes.
 4. Configure (below), start, watch the log. First start installs Nextcloud and then Nextcloud Office + built-in CODE.
 5. Run `nc-diag` (see Diagnostics). Tunnel setup: [../docs/CLOUDFLARE.md](../docs/CLOUDFLARE.md).
@@ -18,6 +18,7 @@ Existing install? Do **not** start with admin credentials; follow [../docs/MIGRA
 | `internal_url` | empty | Optional callback URL for CODE → Nextcloud (`richdocuments wopi_callback_url`). Leave empty unless diagnostics demand it. |
 | `trusted_domains` | `[]` | Additional hostnames (`public_url` host is automatic; `localhost` if both empty). Managed by the add-on: manual entries are replaced at start. |
 | `trusted_proxies` | `172.30.32.0/23` | IPs/CIDRs allowed to set `X-Forwarded-*`. Never `0.0.0.0/0`. |
+| `db_type` | `mariadb` | `mariadb` or `postgresql`. PostgreSQL requires `db_mode: external`. |
 | `db_mode` | `supervisor` | `supervisor` = MariaDB add-on via Supervisor service discovery (database is created if missing). `external` = `db_host/db_port/db_user/db_password`. |
 | `db_name` | `nextcloud` | Must be empty/non-existent for a new install. The add-on refuses to install over a database that already has `oc_*` tables. |
 | `admin_user`, `admin_password` | empty | Required **only** for the very first install (≥10 chars). Ignored afterwards; clear them after install. |
@@ -33,7 +34,26 @@ Existing install? Do **not** start with admin credentials; follow [../docs/MIGRA
 | `log_level` | `info` | `debug/info/warning/error`. |
 
 Persistent locations: `/data/nextcloud/html` (code, `config/`, `custom_apps/`, `themes/` – symlinked to `/var/www/html`),
-`data_path` (user data), MariaDB (own add-on), `/backup/nextcloud_official` (backups).
+`data_path` (user data), the database (own add-on or external server), `/backup/nextcloud_official` (backups).
+
+## Using PostgreSQL
+
+Home Assistant's Supervisor offers service discovery only for MariaDB, so PostgreSQL is always configured by hand:
+
+1. Run a PostgreSQL server (a community add-on, another container, or another machine) reachable from the add-on. Tested with PostgreSQL 17 (Nextcloud itself supports older releases);
+   the image ships the PostgreSQL 17 client tools, and `pg_dump` cannot read from a *newer* server than itself.
+2. Create an empty database and an owner for it, for example:
+   ```sql
+   CREATE USER nextcloud WITH PASSWORD '<strong password>';
+   CREATE DATABASE nextcloud OWNER nextcloud ENCODING 'UTF8' TEMPLATE template0;
+   ```
+3. In the add-on options set `db_type: postgresql`, `db_mode: external`, `db_host`, `db_name`, `db_user`, `db_password`
+   (`db_port: 0` means the default, 5432).
+4. Start with an **empty** database: the add-on refuses to install over a database that already holds Nextcloud tables.
+
+Backups (`nc-backup`) and restores use `pg_dump` / `psql`; a backup can only be restored into the same database engine it was taken from.
+You cannot switch an existing instance between engines by changing the option: convert it with Nextcloud's own tool
+(`occ db:convert-type`) after taking a verified backup. The migration importer (`nc-migrate`) imports MariaDB/MySQL sources into MariaDB only.
 
 ## Permissions and security notes
 

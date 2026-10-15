@@ -47,8 +47,7 @@ cmd_create() {
     [ -d "$NC_WEBROOT/custom_apps" ] && tar_items+=(custom_apps)
     [ -d "$NC_WEBROOT/themes" ] && tar_items+=(themes)
     {
-        mariadb-dump --single-transaction --quick --default-character-set=utf8mb4 --routines \
-            -h "$DBH" -P "$DBP" -u "$DBU" "$DBN" | gzip -9 >"$dir/db.sql.gz" \
+        db_dump | gzip -9 >"$dir/db.sql.gz" \
         && tar -czf "$dir/config.tar.gz" -C "$NC_WEBROOT" "${tar_items[@]}" \
         && { occ app:list --output=json >"$dir/apps.json" 2>/dev/null || echo '{}' >"$dir/apps.json"; } \
         && mkdir -p "$dir/data" \
@@ -56,8 +55,8 @@ cmd_create() {
     } || ok=0
     if [ "$ok" = 1 ]; then
         ( cd "$dir" && sha256sum db.sql.gz config.tar.gz apps.json >SHA256SUMS )
-        jq -n --arg ts "$ts" --arg v "$(nc_code_version)" --arg db "$DBN" --arg dd "$datadir" --arg arch "$(detect_arch)" \
-            '{created:$ts, nextcloud:$v, database:$db, datadirectory:$dd, architecture:$arch, format:1}' >"$dir/manifest.json"
+        jq -n --arg ts "$ts" --arg v "$(nc_code_version)" --arg db "$DBN" --arg dd "$datadir" --arg arch "$(detect_arch)" --arg dbt "$DBTYPE" \
+            '{created:$ts, nextcloud:$v, database:$db, dbtype:$dbt, datadirectory:$dd, architecture:$arch, format:1}' >"$dir/manifest.json"
         verify_dir "$dir" live || ok=0
     fi
     maint off; trap - EXIT
@@ -76,7 +75,7 @@ verify_dir() {
     [ -d "$dir" ] || { log error "no such backup: $dir"; return 1; }
     ( cd "$dir" && sha256sum -c SHA256SUMS >/dev/null 2>&1 ) || { log error "checksum mismatch"; rc=1; }
     gzip -t "$dir/db.sql.gz" 2>/dev/null || { log error "db.sql.gz is corrupt"; rc=1; }
-    zcat "$dir/db.sql.gz" | tail -n 5 | grep 'Dump completed' >/dev/null || { log error "DB dump is truncated (no completion marker)"; rc=1; }
+    zcat "$dir/db.sql.gz" | db_dump_complete || { log error "DB dump is truncated (no completion marker)"; rc=1; }
     tar -tzf "$dir/config.tar.gz" >/dev/null 2>&1 || { log error "config.tar.gz is corrupt"; rc=1; }
     tar -tzf "$dir/config.tar.gz" | grep 'config/config.php' >/dev/null || { log error "config.php missing from archive"; rc=1; }
     [ -d "$dir/data" ] || { log error "data snapshot missing"; rc=1; }
@@ -111,18 +110,22 @@ cmd_restore() {
     need_installed
     db_connect_from_config "$CFG"
     local datadir; datadir="$(cfg_get "$CFG" datadirectory)"
+    local bt; bt="$(jq -r '.dbtype // "mysql"' "$dir/manifest.json")"
+    [ "$bt" = "$DBTYPE" ] || die "Backup was made from a '$bt' database but this instance uses '$DBTYPE'; restoring across engines is unsupported."
     log warning "Creating safety backup of the CURRENT state before restoring"
-    cmd_create --label pre-restore >/dev/null || die "Safety backup failed; aborting restore."
+    local safety; safety="$(cmd_create --label pre-restore | tail -n1)" || die "Safety backup failed; aborting restore."
 
     occ maintenance:mode --on >/dev/null
+    trap 'log error "Restore FAILED part-way. Nextcloud is left in maintenance mode. Pre-restore safety backup: $safety (restore it with nc-backup restore)"' ERR
     log info "Restoring database"
-    mariadb -h "$DBH" -P "$DBP" -u "$DBU" -e "DROP DATABASE \`$DBN\`; CREATE DATABASE \`$DBN\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci"
-    zcat "$dir/db.sql.gz" | mariadb -h "$DBH" -P "$DBP" -u "$DBU" "$DBN"
+    db_reset
+    zcat "$dir/db.sql.gz" | db_load
     log info "Restoring data"
     rsync -a --delete "$dir/data"/ "$datadir"/
     log info "Restoring config, custom_apps and themes"
     tar -xzf "$dir/config.tar.gz" -C "$NC_WEBROOT"
     chown -R www-data:www-data "$datadir" "$NC_WEBROOT/config"
+    trap - ERR
     occ maintenance:mode --off >/dev/null
     occ maintenance:data-fingerprint >/dev/null || true
     log info "Restore finished. Verify: nc-diag"

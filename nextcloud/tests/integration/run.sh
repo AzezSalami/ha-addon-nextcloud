@@ -11,6 +11,9 @@ P="nctest$$"
 PASS_ADMIN="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)A1"
 PASS_DB="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)"
 PORT="${NC_TEST_PORT:-18080}"
+# Database engine under test: mariadb (default) or postgresql, e.g.  NC_TEST_DB=postgresql tests/integration/run.sh
+DB_KIND="${NC_TEST_DB:-mariadb}"
+echo "### database engine: $DB_KIND"
 RESULTS=(); FAILS=0
 export MSYS_NO_PATHCONV=1
 # host may lack jq (e.g. Git Bash): fall back to the jq inside the image
@@ -39,9 +42,9 @@ write_options() { # write_options <volume> <json>
     docker run --rm -v "$1":/data -e OPT="$2" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'
 }
 options_json() {
-    jq -n --arg ap "$PASS_ADMIN" --arg dp "$PASS_DB" --arg db "$1" --arg dd "$2" --argjson mig "${3:-false}" '{
+    jq -n --arg ap "$PASS_ADMIN" --arg dp "$PASS_DB" --arg db "$1" --arg dd "$2" --argjson mig "${3:-false}" --arg dbt "$DB_KIND" '{
       public_url:"http://localhost", internal_url:"", trusted_domains:[], trusted_proxies:["172.16.0.0/12"],
-      db_mode:"external", db_host:"db", db_port:3306, db_name:$db, db_user:"nc", db_password:$dp,
+      db_type:$dbt, db_mode:"external", db_host:"db", db_port:0, db_name:$db, db_user:"nc", db_password:$dp,
       admin_user:"admin", admin_password:$ap, data_path:$dd, background_jobs:"cron", php_memory_limit:"512M",
       upload_limit:"1G", default_phone_region:"DE", enable_office:true, code_diagnostics:false,
       code_start_timeout:300, backup_on_start:false, migration_mode:$mig, log_level:"info"}'
@@ -51,9 +54,14 @@ if [ "${1:-}" = "" ]; then docker build -t "$IMG" "$ROOT" >/dev/null 2>&1 || { e
 
 docker network create "$P-net" >/dev/null
 docker volume create "$P-data" >/dev/null; docker volume create "$P-dbdata" >/dev/null; docker volume create "$P-bk" >/dev/null
-docker run -d --name "$P-db" --network "$P-net" --network-alias db -v "$P-dbdata":/var/lib/mysql \
-    -e MARIADB_RANDOM_ROOT_PASSWORD=1 -e MARIADB_DATABASE=nextcloud -e MARIADB_USER=nc -e MARIADB_PASSWORD="$PASS_DB" \
-    mariadb:11 --transaction-isolation=READ-COMMITTED --binlog-format=ROW >/dev/null
+if [ "$DB_KIND" = postgresql ]; then
+    docker run -d --name "$P-db" --network "$P-net" --network-alias db -v "$P-dbdata":/var/lib/postgresql/data \
+        -e POSTGRES_DB=nextcloud -e POSTGRES_USER=nc -e POSTGRES_PASSWORD="$PASS_DB" postgres:17 >/dev/null
+else
+    docker run -d --name "$P-db" --network "$P-net" --network-alias db -v "$P-dbdata":/var/lib/mysql \
+        -e MARIADB_RANDOM_ROOT_PASSWORD=1 -e MARIADB_DATABASE=nextcloud -e MARIADB_USER=nc -e MARIADB_PASSWORD="$PASS_DB" \
+        mariadb:11 --transaction-isolation=READ-COMMITTED --binlog-format=ROW >/dev/null
+fi
 sleep 20
 write_options "$P-data" "$(options_json nextcloud /data/nextcloud-data)"
 

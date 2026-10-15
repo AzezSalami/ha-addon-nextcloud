@@ -40,6 +40,33 @@ printf '%s' "$good" >"$T/o.json";                    rc "first install ok with a
 msg="$(mk '.admin_password="short"'; validate_options "$T/o.json")"
 case "$msg" in *short*) eq "error message does not echo password value" leaked ok ;; *) eq "error message does not echo password value" ok ok ;; esac
 
+echo "-- database engine selection"
+mk '.db_type="postgresql"|.db_mode="external"';      rc "postgresql + external ok" 0 validate_options "$T/o.json"
+mk '.db_type="postgresql"|.db_mode="supervisor"';    rc "postgresql needs external mode" 1 validate_options "$T/o.json"
+mk '.db_type="mariadb"';                             rc "mariadb explicit ok" 0 validate_options "$T/o.json"
+mk '.db_type="oracle"';                              rc "unknown db_type rejected" 1 validate_options "$T/o.json"
+mk '.db_port=0';                                     rc "db_port 0 = engine default" 0 validate_options "$T/o.json"
+mk '.db_port=70000';                                 rc "db_port out of range" 1 validate_options "$T/o.json"
+eq "kind mariadb" "$(db_kind_to_type mariadb)" mysql
+eq "kind postgresql" "$(db_kind_to_type postgresql)" pgsql
+eq "kind empty defaults to mysql" "$(db_kind_to_type '')" mysql
+eq "default port mysql" "$(db_default_port mysql)" 3306
+eq "default port pgsql" "$(db_default_port pgsql)" 5432
+printf -- '-- Dump completed on 2026-01-01\n' | db_dump_complete; eq "mysql dump marker" "$?" 0
+printf -- '--\n-- PostgreSQL database dump complete\n--\n' | db_dump_complete; eq "pgsql dump marker" "$?" 0
+printf -- 'INSERT INTO x VALUES (1);\n' | db_dump_complete; eq "truncated dump rejected" "$?" 1
+cat >"$T/pg.php" <<'PHP'
+<?php
+$CONFIG = array('dbtype' => 'pgsql', 'dbhost' => 'pg.local', 'dbname' => 'nc', 'dbuser' => 'u', 'dbpassword' => 'p');
+PHP
+db_connect_from_config "$T/pg.php"
+eq "config.php pgsql type" "$DBTYPE" pgsql
+eq "config.php pgsql default port" "$DBP" 5432
+eq "config.php pgsql host" "$DBH" pg.local
+sed -i "s/'pg.local'/'pg.local:6543'/" "$T/pg.php"; db_connect_from_config "$T/pg.php"
+eq "config.php explicit port" "$DBP" 6543
+NC_SECRET_VALUES=()
+
 echo "-- architecture / runtime detection"
 eq "x86_64" "$(NC_UNAME_M=x86_64 detect_arch)" x86_64
 eq "amd64 alias" "$(NC_UNAME_M=amd64 detect_arch)" x86_64

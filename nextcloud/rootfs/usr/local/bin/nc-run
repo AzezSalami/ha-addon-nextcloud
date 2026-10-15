@@ -46,19 +46,22 @@ else
     DB_HOST="$(opt db_host)"; DB_PORT="$(opt db_port)"; DB_USER="$(opt db_user)"; DB_PASS="$(opt db_password)"
 fi
 NC_SECRET_VALUES+=("$DB_PASS")
-export MYSQL_PWD="$DB_PASS"
-mdb() { mariadb --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$@"; }
+DBTYPE="$(db_kind_to_type "$(opt db_type)")"
+{ [ -n "$DB_PORT" ] && [ "$DB_PORT" != 0 ]; } || DB_PORT="$(db_default_port "$DBTYPE")"
+DBH="$DB_HOST"; DBP="$DB_PORT"; DBU="$DB_USER"; DBN="$DB_NAME"
+db_set_password "$DB_PASS"
+export DBTYPE DBH DBP DBU DBN
 
-for i in $(seq 1 30); do mdb -e 'SELECT 1' >/dev/null 2>&1 && break
-    [ "$i" = 30 ] && die "Cannot connect to the database at $DB_HOST:$DB_PORT as '$DB_USER'. Is the MariaDB add-on running?"
+for i in $(seq 1 30); do db_ping_server && break
+    [ "$i" = 30 ] && die "Cannot connect to the $DBTYPE database at $DB_HOST:$DB_PORT as '$DB_USER' (check host, port, user, password and that the server is running)."
     sleep 2
 done
 if [ "$(opt db_mode)" = supervisor ]; then
-    # Non-destructive: creates the database only if it does not exist.
-    mdb -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci" >/dev/null 2>&1 || true
+    # Non-destructive: creates the database only if it does not exist (MariaDB service only).
+    _mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci" >/dev/null 2>&1 || true
 fi
-mdb -e "USE \`$DB_NAME\`" >/dev/null 2>&1 || die "Database '$DB_NAME' does not exist and could not be created. Create it (utf8mb4) and restart."
-log info "Database reachable ($DB_HOST:$DB_PORT, db '$DB_NAME')"
+db_exists || die "Database '$DB_NAME' does not exist and could not be created. Create it (MariaDB: utf8mb4; PostgreSQL: owned by '$DB_USER', UTF8) and restart."
+log info "Database reachable ($DBTYPE at $DB_HOST:$DB_PORT, db '$DB_NAME')"
 
 # ---- 4. persistent storage ----------------------------------------------------------------
 mkdir -p "$NC_WEBROOT" "$DATA_PATH"
@@ -83,7 +86,7 @@ if nc_installed; then
     fi
 else
     validate_first_install "$NC_OPTIONS_FILE" || die "See above."
-    n="$(mdb -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$DB_NAME' AND table_name LIKE 'oc\\_%'")"
+    n="$(db_oc_tables)"
     [ "${n:-0}" = 0 ] || die "Database '$DB_NAME' already contains $n Nextcloud tables but no config.php exists. Refusing to install over it. Use nc-migrate import or choose another db_name."
     if [ -n "$(find "$DATA_PATH" -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit)" ]; then
         die "data_path $DATA_PATH is not empty but Nextcloud is not installed. Refusing to install over existing data."
@@ -92,7 +95,11 @@ fi
 [ "$(opt backup_on_start)" != true ] || { nc_installed && nc-backup create --label on-start --offline || true; }
 
 # ---- 5. environment for the official entrypoint -------------------------------------------
-export MYSQL_HOST="$DB_HOST:$DB_PORT" MYSQL_DATABASE="$DB_NAME" MYSQL_USER="$DB_USER" MYSQL_PASSWORD="$DB_PASS"
+if [ "$DBTYPE" = pgsql ]; then
+    export POSTGRES_HOST="$DB_HOST:$DB_PORT" POSTGRES_DB="$DB_NAME" POSTGRES_USER="$DB_USER" POSTGRES_PASSWORD="$DB_PASS"
+else
+    export MYSQL_HOST="$DB_HOST:$DB_PORT" MYSQL_DATABASE="$DB_NAME" MYSQL_USER="$DB_USER" MYSQL_PASSWORD="$DB_PASS"
+fi
 export NEXTCLOUD_DATA_DIR="$DATA_PATH"
 PHP_MEMORY_LIMIT="$(opt php_memory_limit)"; PHP_UPLOAD_LIMIT="$(opt upload_limit)"
 export PHP_MEMORY_LIMIT PHP_UPLOAD_LIMIT

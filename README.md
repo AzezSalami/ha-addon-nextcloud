@@ -10,7 +10,7 @@ document server.
 
 * **Official Nextcloud image** (Debian-based), pinned to a specific release, rather than a community rebuild.
 * **Built-in Nextcloud Office** installed and enabled automatically for your CPU type (x86-64 or ARM64).
-* **Uses the Home Assistant MariaDB add-on** (or any external MariaDB/MySQL). Your database is never on throwaway storage.
+* **Your choice of database**: the Home Assistant MariaDB add-on (default, auto-discovered), an external MariaDB/MySQL, or **PostgreSQL**. Your database is never on throwaway storage.
 * **Safe by default**: refuses to install over an existing database or data folder, refuses to start on data from a newer
   Nextcloud version (no accidental downgrade), and takes a verified backup before every upgrade.
 * **Backups and restore** from the command line, with integrity checks.
@@ -25,7 +25,7 @@ document server.
 * Home Assistant OS or Supervised (anything that supports add-on repositories).
 * A 64-bit CPU: **amd64** or **aarch64** (Raspberry Pi 4/5, most mini PCs). 32-bit ARM and 32-bit x86 are not supported by the
   built-in Office.
-* The **MariaDB** add-on (or an external MariaDB 10.6+ / MySQL 8).
+* The **MariaDB** add-on (or an external MariaDB 10.6+ / MySQL 8, or PostgreSQL; tested with 17).
 * About **2 GiB of free RAM** for comfortable use of Office, plus storage for your files.
 
 ## Installation
@@ -62,7 +62,7 @@ copies your data and database into the new add-on and leaves the old one untouch
 | `public_url` | Your public address. Sets trusted domains and HTTPS handling. |
 | `trusted_domains` | Extra hostnames (for example a local name). |
 | `trusted_proxies` | Addresses of your reverse proxy / tunnel that may set forwarded headers. |
-| `db_mode`, `db_*` | MariaDB add-on (default) or an external database. |
+| `db_type`, `db_mode`, `db_*` | MariaDB add-on (default), or an external MariaDB/PostgreSQL server (see [PostgreSQL setup](nextcloud/DOCS.md#using-postgresql)). |
 | `data_path` | Where user files are stored. Use `/share/...` for a large disk. |
 | `enable_office` | Install and enable Nextcloud Office with the built-in server. |
 | `backup_on_start` | Take a verified backup every time the add-on starts. |
@@ -105,7 +105,7 @@ Not yet verified by the maintainer, so treat as **beta**:
 
 Other limitations:
 
-* Migration supports MariaDB/MySQL sources only.
+* Migration (`nc-migrate`) supports MariaDB/MySQL sources only. PostgreSQL is supported for new installs, backups and restores.
 * The built-in Office server runs inside the Nextcloud container and talks to the browser over HTTP polling rather than
   WebSockets. A separate Collabora server is more scalable and isolated ([alternative](docs/ALTERNATIVE-COLLABORA.md)).
 * Settings such as admin and database passwords are stored by Home Assistant in plain text in the add-on's options, like any add-on.

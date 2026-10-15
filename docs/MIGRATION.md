@@ -25,7 +25,7 @@ a PostgreSQL variant of this tool (limitation, see README).
 
 ## 1. Install the new add-on (empty) in migration mode
 
-1. Install the MariaDB add-on (or have an external MariaDB) and the new add-on.
+1. Install the MariaDB add-on (or have an external MariaDB) and the new add-on. The importer needs a MariaDB target; if you want PostgreSQL, migrate into MariaDB first and convert afterwards with `occ db:convert-type`.
 2. In the new add-on options set `db_mode`, `db_name` (**a new, empty database name**; never the old one),
    `data_path` (new, empty), `public_url`, and **`migration_mode: true`**. Leave `admin_*` empty.
 3. Start it. The log says *MIGRATION MODE: Apache is NOT started*. No tables are created.
