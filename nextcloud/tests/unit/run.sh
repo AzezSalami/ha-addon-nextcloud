@@ -94,6 +94,7 @@ eq "redact plain" "$(echo 'pw=S3cr3t-Value ok' | redact)" "pw=*** ok"
 eq "redact special chars" "$(echo 'x a/b&c y' | redact)" "x *** y"
 eq "log redacts" "$(NC_LOG_LEVEL=info log info 'token S3cr3t-Value' | sed 's/^\[[^]]*\] *//')" "info    token ***"
 eq "log level filter" "$(NC_LOG_LEVEL=error log info hidden)" ""
+export NC_SECRET_VALUES
 NC_SECRET_VALUES=()
 
 echo "-- config.php rewrite (migration)"

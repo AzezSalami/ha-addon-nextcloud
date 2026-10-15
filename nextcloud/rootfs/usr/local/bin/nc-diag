@@ -42,7 +42,7 @@ case "$(mem_assessment "$mem_kb")" in
     critical) finding ERROR low_resources "Less than 1 GiB RAM available" "Built-in CODE needs roughly 1-2 GiB. Stop other add-ons or add RAM." ;;
     low) finding WARN low_resources "Less than 2 GiB RAM available" "Large documents may fail to load." ;;
 esac
-fc=0; ldconfig -p 2>/dev/null | grep -q fontconfig && fc=1
+fc=0; ldconfig -p 2>/dev/null | grep fontconfig >/dev/null && fc=1
 [ "$fc" = 1 ] || finding ERROR no_fontconfig "fontconfig not found" "$(code_error_hint no_fontconfig)"
 disabled="$(php -r 'echo ini_get("disable_functions");')"
 case ",$disabled," in *,exec,*|*,proc_open,*) finding ERROR exec_disabled "PHP exec/proc_open disabled" "$(code_error_hint exec_disabled)" ;; esac

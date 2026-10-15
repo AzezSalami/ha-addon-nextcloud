@@ -86,6 +86,7 @@ cfg_get() {
 }
 
 # db_connect_from_config <config.php>: sets DBH DBP DBN DBU and exports MYSQL_PWD (do not log).
+# shellcheck disable=SC2034  # DBH/DBP/DBN/DBU are consumed by the scripts that source this file
 db_connect_from_config() {
     local c="$1" host
     host="$(cfg_get "$c" dbhost)"

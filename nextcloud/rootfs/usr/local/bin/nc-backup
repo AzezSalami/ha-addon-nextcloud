@@ -43,10 +43,13 @@ cmd_create() {
     # always leave maintenance mode, even when something fails
     trap 'maint off || true' EXIT
     local ok=1
+    local tar_items=(config)
+    [ -d "$NC_WEBROOT/custom_apps" ] && tar_items+=(custom_apps)
+    [ -d "$NC_WEBROOT/themes" ] && tar_items+=(themes)
     {
         mariadb-dump --single-transaction --quick --default-character-set=utf8mb4 --routines \
             -h "$DBH" -P "$DBP" -u "$DBU" "$DBN" | gzip -9 >"$dir/db.sql.gz" \
-        && tar -czf "$dir/config.tar.gz" -C "$NC_WEBROOT" config $( [ -d "$NC_WEBROOT/custom_apps" ] && echo custom_apps ) $( [ -d "$NC_WEBROOT/themes" ] && echo themes ) \
+        && tar -czf "$dir/config.tar.gz" -C "$NC_WEBROOT" "${tar_items[@]}" \
         && { occ app:list --output=json >"$dir/apps.json" 2>/dev/null || echo '{}' >"$dir/apps.json"; } \
         && mkdir -p "$dir/data" \
         && rsync -a ${prev:+--link-dest="$prev/data"} "$datadir"/ "$dir/data"/
@@ -73,9 +76,9 @@ verify_dir() {
     [ -d "$dir" ] || { log error "no such backup: $dir"; return 1; }
     ( cd "$dir" && sha256sum -c SHA256SUMS >/dev/null 2>&1 ) || { log error "checksum mismatch"; rc=1; }
     gzip -t "$dir/db.sql.gz" 2>/dev/null || { log error "db.sql.gz is corrupt"; rc=1; }
-    zcat "$dir/db.sql.gz" | tail -n 5 | grep -q 'Dump completed' || { log error "DB dump is truncated (no completion marker)"; rc=1; }
+    zcat "$dir/db.sql.gz" | tail -n 5 | grep 'Dump completed' >/dev/null || { log error "DB dump is truncated (no completion marker)"; rc=1; }
     tar -tzf "$dir/config.tar.gz" >/dev/null 2>&1 || { log error "config.tar.gz is corrupt"; rc=1; }
-    tar -tzf "$dir/config.tar.gz" | grep -q 'config/config.php' || { log error "config.php missing from archive"; rc=1; }
+    tar -tzf "$dir/config.tar.gz" | grep 'config/config.php' >/dev/null || { log error "config.php missing from archive"; rc=1; }
     [ -d "$dir/data" ] || { log error "data snapshot missing"; rc=1; }
     if [ "$mode" = live ]; then
         local datadir; datadir="$(cfg_get "$CFG" datadirectory)"

@@ -30,7 +30,7 @@ trap cleanup EXIT
 wait_ready() { # wait_ready <container> <timeout-seconds>
     local c="$1" t="$2" i=0
     while [ "$i" -lt "$t" ]; do
-        docker exec "$c" curl -fsS http://127.0.0.1/status.php 2>/dev/null | grep -q '"installed":true' && return 0
+        docker exec "$c" curl -fsS http://127.0.0.1/status.php 2>/dev/null | grep '"installed":true' >/dev/null && return 0
         sleep 5; i=$((i + 5))
     done
     return 1
@@ -116,14 +116,14 @@ docker volume create "$P-data2" >/dev/null
 write_options "$P-data2" "$(options_json nextcloud /data/nextcloud-data)"
 docker run -d --name "$P-nc2" --network "$P-net" -v "$P-data2":/data "$IMG" >/dev/null
 sleep 25
-docker logs "$P-nc2" 2>&1 | grep -q 'Refusing to install over it' && ok "refuses to install over existing database" || bad "did not refuse existing DB"
+docker logs "$P-nc2" 2>&1 | grep 'Refusing to install over it' >/dev/null && ok "refuses to install over existing database" || bad "did not refuse existing DB"
 docker rm -f "$P-nc2" >/dev/null
 
 echo "### rollback guard (downgrade refused)"
 dexec sed -i "s/'version' => '[0-9.]*'/'version' => '99.0.0.0'/" /data/nextcloud/html/config/config.php
 dexec sh -c "sed -i 's/\\\$OC_Version = array([0-9]*/\\\$OC_Version = array(99/' /data/nextcloud/html/version.php"
 docker restart "$P-nc" >/dev/null; sleep 20
-docker logs "$P-nc" 2>&1 | tail -n 5 | grep -q 'newer than the image' && ok "downgrade refused" || bad "downgrade not refused"
+docker logs "$P-nc" 2>&1 | tail -n 5 | grep 'newer than the image' >/dev/null && ok "downgrade refused" || bad "downgrade not refused"
 
 echo
 printf '%s\n' "${RESULTS[@]}"

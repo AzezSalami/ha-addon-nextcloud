@@ -28,7 +28,6 @@ fi
 [ -z "$msgs" ] || printf '%s\n' "$msgs" | redact
 
 PUBLIC_URL="$(opt public_url)"
-INTERNAL_URL="$(opt internal_url)"
 DATA_PATH="$(opt data_path)"
 DB_NAME="$(opt db_name)"
 export NC_LOG_LEVEL
@@ -95,9 +94,11 @@ fi
 # ---- 5. environment for the official entrypoint -------------------------------------------
 export MYSQL_HOST="$DB_HOST:$DB_PORT" MYSQL_DATABASE="$DB_NAME" MYSQL_USER="$DB_USER" MYSQL_PASSWORD="$DB_PASS"
 export NEXTCLOUD_DATA_DIR="$DATA_PATH"
-export PHP_MEMORY_LIMIT="$(opt php_memory_limit)" PHP_UPLOAD_LIMIT="$(opt upload_limit)"
+PHP_MEMORY_LIMIT="$(opt php_memory_limit)"; PHP_UPLOAD_LIMIT="$(opt upload_limit)"
+export PHP_MEMORY_LIMIT PHP_UPLOAD_LIMIT
 if ! nc_installed; then
-    export NEXTCLOUD_ADMIN_USER="$(opt admin_user)" NEXTCLOUD_ADMIN_PASSWORD="$(opt admin_password)"
+    NEXTCLOUD_ADMIN_USER="$(opt admin_user)"; NEXTCLOUD_ADMIN_PASSWORD="$(opt admin_password)"
+    export NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD
 fi
 domains=()
 [ -z "$PUBLIC_URL" ] || domains+=("$(url_host "$PUBLIC_URL")")
@@ -108,7 +109,8 @@ export NEXTCLOUD_TRUSTED_DOMAINS="${domains[*]}"
 proxies="$(opt trusted_proxies)"
 [ -z "$proxies" ] || export TRUSTED_PROXIES="$proxies"
 if [ -n "$PUBLIC_URL" ]; then
-    export OVERWRITEPROTOCOL="$(url_scheme "$PUBLIC_URL")" OVERWRITEHOST="$(url_host "$PUBLIC_URL")" OVERWRITECLIURL="$PUBLIC_URL"
+    OVERWRITEPROTOCOL="$(url_scheme "$PUBLIC_URL")"; OVERWRITEHOST="$(url_host "$PUBLIC_URL")"; OVERWRITECLIURL="$PUBLIC_URL"
+    export OVERWRITEPROTOCOL OVERWRITEHOST OVERWRITECLIURL
 fi
 
 # ---- 6. start ------------------------------------------------------------------------------
