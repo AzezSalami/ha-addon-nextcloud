@@ -64,13 +64,13 @@ curl -fsS "http://127.0.0.1:$PORT/status.php" | jq -e '.installed==true and .mai
 check "container is glibc" bash -c "docker exec $P-nc ldd --version 2>&1 | head -1 | grep -qi 'gnu\|glibc'"
 
 echo "### built-in CODE"
+APP="richdocumentscode"; [ "$(dexec uname -m)" = aarch64 ] && APP="richdocumentscode_arm64"
 for _ in $(seq 1 90); do
-    dexec sh -c '. /usr/local/lib/nc-addon/common.sh; occ app:list --output=json' 2>/dev/null | jq -e '.enabled|has("richdocuments")' >/dev/null 2>&1 && break
+    dexec bash -c ". /usr/local/lib/nc-addon/common.sh; occ app:list --output=json" 2>/dev/null | jq -e --arg a "$APP" '.enabled | has("richdocuments") and has($a)' >/dev/null 2>&1 && break
     sleep 10
 done
-APP="richdocumentscode"; [ "$(dexec uname -m)" = aarch64 ] && APP="richdocumentscode_arm64"
-PROXY="$(dexec sh -c ". /usr/local/lib/nc-addon/common.sh; code_proxy_path $APP")"
 for _ in $(seq 1 60); do
+    PROXY="$(dexec bash -c ". /usr/local/lib/nc-addon/common.sh; code_proxy_path $APP")"
     st="$(dexec curl -sS -H 'Host: localhost' "http://127.0.0.1$PROXY?status" 2>/dev/null)"
     [ "$(jq -r .status <<<"$st" 2>/dev/null)" = OK ] && break; sleep 5
 done
@@ -87,7 +87,7 @@ docker logs "$P-nc" 2>&1 | grep -F "$PASS_ADMIN" >/dev/null && bad "admin passwo
 docker logs "$P-nc" 2>&1 | grep -F "$PASS_DB" >/dev/null && bad "db password leaked into logs" || ok "no db password in logs"
 
 echo "### persistence + restart"
-dexec runuser -u www-data -- sh -c 'echo persist-test > /data/nextcloud/html/../../data/nextcloud-data/admin/files/persist.txt' 2>/dev/null
+dexec runuser -u www-data -- sh -c 'echo persist-test > /data/nextcloud-data/admin/files/persist.txt'
 dexec runuser -u www-data -- php /data/nextcloud/html/occ files:scan admin >/dev/null 2>&1
 before="$(dexec runuser -u www-data -- php /data/nextcloud/html/occ user:list --output=json | jq -r 'keys|join(",")')"
 STOP_START=$(date +%s)
@@ -121,7 +121,7 @@ docker rm -f "$P-nc2" >/dev/null
 
 echo "### rollback guard (downgrade refused)"
 dexec sed -i "s/'version' => '[0-9.]*'/'version' => '99.0.0.0'/" /data/nextcloud/html/config/config.php
-dexec sh -c "sed -i 's/\\\$OC_Version = array([0-9]*/\\\$OC_Version = array(99/' /data/nextcloud/html/version.php"
+dexec bash -c "sed -i 's/\\\$OC_Version = array([0-9]*/\\\$OC_Version = array(99/' /data/nextcloud/html/version.php"
 docker restart "$P-nc" >/dev/null; sleep 20
 docker logs "$P-nc" 2>&1 | tail -n 5 | grep 'newer than the image' >/dev/null && ok "downgrade refused" || bad "downgrade not refused"
 

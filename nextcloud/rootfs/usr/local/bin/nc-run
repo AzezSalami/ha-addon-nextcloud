@@ -126,9 +126,10 @@ stop_all() {
     kill -0 "$child" 2>/dev/null && kill -TERM "$child" 2>/dev/null || true
     pkill -TERM -f coolwsd 2>/dev/null || true   # built-in CODE spawned by proxy.php
 }
-trap stop_all TERM INT
+trap stop_all TERM INT WINCH
 
-/entrypoint-addon.sh apache2-foreground &
+# Own session/process group: Apache signals its process group on shutdown, which would otherwise kill this script (exit 143).
+setsid /entrypoint-addon.sh apache2-foreground &
 child=$!
 
 cron_loop() {

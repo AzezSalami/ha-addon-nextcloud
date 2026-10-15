@@ -36,3 +36,27 @@ See the section at the bottom of this file, filled in from the real run output.
 3. Restart the add-on; the document is intact; `nc-diag` still clean.
 4. `nc-backup create`, verify; restore on a scratch instance.
 5. Access the public hostname through the tunnel; `https status.php : HTTP 200 (ok)`.
+
+## Recorded results (2026-10-15, Windows 11 + Docker Desktop, linux/amd64, image `ncaddon:test` built from this repository)
+
+Unit suite: **76 passed, 0 failed.**
+
+Integration suite (`tests/integration/run.sh`, real MariaDB 11, Nextcloud 35.0.1, Nextcloud Office + built-in CODE installed from the app store): **23 passed, 0 failed.**
+
+| Check | Result |
+|---|---|
+| First install; `status.php` healthy JSON; glibc | pass |
+| CODE `proxy.php?status` returns `{"status":"OK"}` (not `no_glibc`) | pass |
+| `/hosting/capabilities` valid JSON; `/hosting/discovery` WOPI XML | pass |
+| Container healthcheck; `nc-diag` reports CODE ok; no secrets in diag or logs | pass |
+| Graceful stop (3 s) and exit code 0 on SIGTERM | pass |
+| Restart recovery; users and files survive restart; config on persistent `/data` | pass |
+| Backup create + verify; restore brings back a deleted file; healthy after restore | pass |
+| Refuses to install over an existing database; refuses to start on newer data (downgrade) | pass |
+
+Bugs found and fixed by these runs: `/var/www/html` is a Docker VOLUME (webroot moved to `/data/nextcloud/html`); store-installed CODE is served under
+`/custom_apps/`, not `/apps/`; the base image's `STOPSIGNAL SIGWINCH` made `docker stop` wait for SIGKILL; Apache signals its process group on stop
+(Apache is now started with `setsid`).
+
+Still **not** verified: arm64, a real Home Assistant Supervisor, Cloudflare Tunnel, a browser DOCX edit/save session, and `nc-migrate import` against real
+LinuxServer data.

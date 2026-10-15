@@ -40,5 +40,8 @@ LABEL io.hass.type="addon" \
       io.hass.version="${BUILD_VERSION}" \
       org.opencontainers.image.source="https://github.com/AzezSalami/ha-addon-nextcloud"
 
+# The php:apache base sets STOPSIGNAL SIGWINCH (Apache graceful stop). nc-run is PID 1 and handles SIGTERM
+# (Supervisor / docker stop) itself, translating it into a graceful Apache stop.
+STOPSIGNAL SIGTERM
 ENTRYPOINT []
 CMD ["/usr/local/bin/nc-run"]
