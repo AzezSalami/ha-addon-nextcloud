@@ -8,6 +8,8 @@ ARG NC_IMAGE_REV=1
 ARG BUILD_ARCH
 ARG BUILD_VERSION=dev
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Runtime deps for the add-on scripts and for CODE (proxy.php requires fontconfig,
 # ldconfig, grep, a shell, and `ip` to detect IPv6). mariadb-client = backup/migration.
 RUN set -eux; \

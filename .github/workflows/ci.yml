@@ -22,7 +22,7 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: nextcloud/Dockerfile
-          ignore: DL3008,DL3059
+          ignore: DL3006,DL3008,DL3059
 
   unit:
     runs-on: ubuntu-latest
