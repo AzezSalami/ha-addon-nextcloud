@@ -60,6 +60,14 @@ jobs:
           platforms: ${{ matrix.platform }}
           load: true
           tags: ncaddon:test
+      - name: Supervisor-style build must still produce a Debian (glibc) image
+        run: |
+          # Home Assistant's Supervisor passes its own Alpine image as BUILD_FROM; the Dockerfile must ignore it.
+          docker build --platform ${{ matrix.platform }} \
+            --build-arg BUILD_FROM=ghcr.io/home-assistant/base:latest \
+            --build-arg BUILD_ARCH=${{ matrix.arch }} --build-arg BUILD_VERSION=ci \
+            -t ncaddon:supervisor nextcloud
+          docker run --rm --entrypoint sh ncaddon:supervisor -c '. /etc/os-release; echo "$PRETTY_NAME"; [ "$ID" = debian ] && ldd --version 2>&1 | head -n1 | grep -i glibc'
       - name: Unit tests inside the image
         run: docker run --rm -v "$PWD/nextcloud":/src --entrypoint bash ncaddon:test /src/tests/unit/run.sh
       - name: Integration tests (real ${{ matrix.db }}, real CODE)

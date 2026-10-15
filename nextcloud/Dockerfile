@@ -1,10 +1,13 @@
 # syntax=docker/dockerfile:1
 # Base: official Nextcloud image (Debian trixie, glibc). NEVER use an Alpine/-fpm-alpine tag:
 # the built-in CODE AppImage does not support musl libc (proxy.php reports "no_glibc").
-ARG BUILD_FROM=nextcloud:35.0.1-apache
-FROM ${BUILD_FROM}
+#
+# The base is deliberately hard-coded. Home Assistant's Supervisor always passes its own Alpine image as the
+# BUILD_FROM build argument, so using BUILD_FROM here would replace this base with a musl image and break the build.
+FROM nextcloud:35.0.1-apache
 
-ARG NC_IMAGE_REV=1
+# Supervisor passes these; they are only used for labels.
+ARG BUILD_FROM
 ARG BUILD_ARCH
 ARG BUILD_VERSION=dev
 
