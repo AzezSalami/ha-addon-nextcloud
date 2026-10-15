@@ -1,41 +1,122 @@
-# Home Assistant add-on: Nextcloud on the official image, with built-in CODE
+# Nextcloud for Home Assistant (official image + built-in Office)
 
-Replaces a LinuxServer.io-based Nextcloud add-on whose Nextcloud Office fails with
-`{"status":"error","error":"no_glibc"}`.
+A Home Assistant add-on that runs **Nextcloud** on the official Nextcloud Docker image, with **Nextcloud Office**
+(Collabora) built in, so you can open and edit Word, Excel and PowerPoint files in your browser without running a separate
+document server.
 
-## Why `no_glibc` happened
+[![CI](https://github.com/AzezSalami/ha-addon-nextcloud/actions/workflows/ci.yml/badge.svg)](https://github.com/AzezSalami/ha-addon-nextcloud/actions/workflows/ci.yml)
 
-`proxy.php` of the built-in CODE app (`CollaboraOnline/richdocumentscode`) runs `LD_TRACE_LOADED_OBJECTS=1 collabora/Collabora_Online.AppImage`;
-if that exits non-zero it answers `no_glibc`. The AppImage is a glibc binary (its README: "does not support musl libc"), and the
-LinuxServer Nextcloud image is Alpine/musl, so the loader cannot run it. Cloudflare Tunnel is not involved. (The upstream source
-was read at the time of writing; re-verify against current `proxy.php` when upgrading.)
+## Features
 
-## What this repository does differently
+* **Official Nextcloud image** (Debian-based), pinned to a specific release, rather than a community rebuild.
+* **Built-in Nextcloud Office** installed and enabled automatically for your CPU type (x86-64 or ARM64).
+* **Uses the Home Assistant MariaDB add-on** (or any external MariaDB/MySQL). Your database is never on throwaway storage.
+* **Safe by default**: refuses to install over an existing database or data folder, refuses to start on data from a newer
+  Nextcloud version (no accidental downgrade), and takes a verified backup before every upgrade.
+* **Backups and restore** from the command line, with integrity checks.
+* **Health and diagnostics**: a built-in report that tells you *why* Office isn't working (missing libraries, DNS, TLS, proxy or
+  Cloudflare problems, low memory, and more).
+* **Works behind a reverse proxy or Cloudflare Tunnel** without opening ports on your router.
+* **Migration helper** for moving an existing Nextcloud over without touching the old install.
+* No privileged mode, no extra capabilities, no host networking.
 
-* Base: **`nextcloud:35.0.1-apache`** (official Docker image, Debian trixie, glibc 2.41, PHP 8.5, amd64 + arm64). Adds `fontconfig`
-  (required by `proxy.php`), MariaDB client, `jq`, `rsync`. The build fails if the base is musl.
-* The add-on scripts (`nc-run`) validate options, check arch/libc, connect to MariaDB (Supervisor service or external), refuse to
-  install over existing databases/data, take a verified backup before upgrades, start the **unmodified upstream entrypoint** and Apache,
-  run background jobs, install/enable Nextcloud Office + the architecture-matched CODE app, and handle SIGTERM gracefully.
-  (Only paths are substituted: `/var/www/html` → `/data/nextcloud/html`, because that upstream path is a Docker `VOLUME`.)
-* `nc-diag`, `nc-backup`, `nc-migrate` – see [nextcloud/DOCS.md](nextcloud/DOCS.md).
+## Requirements
 
-## Install
+* Home Assistant OS or Supervised (anything that supports add-on repositories).
+* A 64-bit CPU: **amd64** or **aarch64** (Raspberry Pi 4/5, most mini PCs). 32-bit ARM and 32-bit x86 are not supported by the
+  built-in Office.
+* The **MariaDB** add-on (or an external MariaDB 10.6+ / MySQL 8).
+* About **2 GiB of free RAM** for comfortable use of Office, plus storage for your files.
 
-Add this repository to the Home Assistant add-on store (Settings → Add-ons → ⋮ → Repositories → `https://github.com/AzezSalami/ha-addon-nextcloud`), install **MariaDB** and
-**Nextcloud (official image + built-in CODE)**.
+## Installation
 
-Docs: [DOCS](nextcloud/DOCS.md) · [Cloudflare](docs/CLOUDFLARE.md) · [Migration](docs/MIGRATION.md) · [Rollback](docs/ROLLBACK.md) ·
-[Backup/restore](docs/BACKUP-RESTORE.md) · [Compatibility](docs/COMPATIBILITY.md) · [Updating](docs/UPDATING.md) ·
-[Testing & evidence](docs/TESTING.md) · [Collabora alternative](docs/ALTERNATIVE-COLLABORA.md)
+1. In Home Assistant go to **Settings → Add-ons → Add-on Store → ⋮ → Repositories** and add:
+   ```
+   https://github.com/AzezSalami/ha-addon-nextcloud
+   ```
+2. Install and start the **MariaDB** add-on if you don't already have it.
+3. Install **Nextcloud (official image + built-in CODE)**. The first install builds the image on your device and takes a few minutes.
+4. Open the add-on's **Configuration** tab and set at least:
+   * `public_url`: the address you will use, e.g. `https://cloud.example.com`
+   * `admin_user` and `admin_password`: needed only for the very first start (minimum 10 characters)
+5. Start the add-on and watch the **Log** tab. The first start installs Nextcloud, then Nextcloud Office.
+6. Make it reachable (see [Cloudflare Tunnel](docs/CLOUDFLARE.md) or enable the add-on's port 80 and use your own reverse proxy).
+7. Check everything with the diagnostics report:
+   ```bash
+   docker exec addon_<repository-hash>_nextcloud_official nc-diag
+   ```
+   (Use the *Advanced SSH & Web Terminal* add-on with protection mode off, or the host console. Find the exact container name with `docker ps`.)
 
-## Known limitations
+After the first start, clear `admin_password` from the configuration.
 
-* Not tested on a real Home Assistant OS/Supervisor, nor through a real Cloudflare Tunnel, by the author (see TESTING.md).
-* `aarch64` is declared and built in CI, but the `richdocumentscode_arm64` app's availability for Nextcloud 35 was not verified.
-* `nc-migrate` supports MySQL/MariaDB sources only; it was not run against real LinuxServer data.
-* Built-in CODE uses HTTP long-polling through a PHP proxy (no WebSockets) and runs in the Nextcloud container (reduced isolation).
-* Needs ~2 GiB free RAM for comfortable use; 6 GiB is fine.
-* DOCX open/edit/save in a browser is a manual acceptance test (checklist in TESTING.md).
-* Image signatures: Docker Official Images publish no cosign signatures; pin digests instead.
-* Secrets are stored in Supervisor's `options.json` (plain text, `/data`) like any add-on option.
+## Already running Nextcloud?
+
+Don't start this add-on with admin credentials on top of an existing setup. Follow the [migration guide](docs/MIGRATION.md): it
+copies your data and database into the new add-on and leaves the old one untouched, so you can switch back at any time
+([rollback guide](docs/ROLLBACK.md)).
+
+## Configuration at a glance
+
+| Option | What it does |
+|---|---|
+| `public_url` | Your public address. Sets trusted domains and HTTPS handling. |
+| `trusted_domains` | Extra hostnames (for example a local name). |
+| `trusted_proxies` | Addresses of your reverse proxy / tunnel that may set forwarded headers. |
+| `db_mode`, `db_*` | MariaDB add-on (default) or an external database. |
+| `data_path` | Where user files are stored. Use `/share/...` for a large disk. |
+| `enable_office` | Install and enable Nextcloud Office with the built-in server. |
+| `backup_on_start` | Take a verified backup every time the add-on starts. |
+
+Every option is explained in the [full documentation](nextcloud/DOCS.md).
+
+## Useful commands
+
+Run these inside the add-on container (`docker exec addon_<name> <command>`):
+
+| Command | Purpose |
+|---|---|
+| `nc-diag` | Readable health report with actionable fixes (`--json` for scripts). |
+| `nc-backup create` / `verify` / `list` / `restore` | Backups, see [backup guide](docs/BACKUP-RESTORE.md). |
+| `nc-migrate preflight` / `import` | Move an existing install, see [migration guide](docs/MIGRATION.md). |
+
+## Documentation
+
+[Full add-on documentation](nextcloud/DOCS.md) · [Cloudflare Tunnel setup](docs/CLOUDFLARE.md) · [Migration](docs/MIGRATION.md) ·
+[Backup and restore](docs/BACKUP-RESTORE.md) · [Rollback](docs/ROLLBACK.md) · [Updating](docs/UPDATING.md) ·
+[Compatibility](docs/COMPATIBILITY.md) · [Testing](docs/TESTING.md) · [Using a separate Collabora server instead](docs/ALTERNATIVE-COLLABORA.md)
+
+## Why not the LinuxServer-based add-ons?
+
+The built-in Office server is a prebuilt program that needs the standard Linux C library (glibc). Add-ons based on Alpine Linux
+(such as images from LinuxServer.io) use a different library (musl), so Nextcloud Office reports
+`{"status":"error","error":"no_glibc"}` and documents never open. This add-on uses the official Debian-based image, which has glibc.
+
+## Status and known limitations
+
+Tested so far: unit tests and a full integration suite (install, Office server start, discovery and capabilities, graceful stop,
+restart, backup and restore, safety checks) on **amd64** in Docker. Details in [TESTING.md](docs/TESTING.md).
+
+Not yet verified by the maintainer, so treat as **beta**:
+
+* Running under a real Home Assistant Supervisor, and through a real Cloudflare Tunnel.
+* **aarch64**: built and tested in CI, but whether an Office server release exists for your Nextcloud version isn't guaranteed.
+* Editing and saving a document in the browser (manual check).
+* The migration tool on real data from other Nextcloud add-ons. **Take a backup and test with a copy first.**
+
+Other limitations:
+
+* Migration supports MariaDB/MySQL sources only.
+* The built-in Office server runs inside the Nextcloud container and talks to the browser over HTTP polling rather than
+  WebSockets. A separate Collabora server is more scalable and isolated ([alternative](docs/ALTERNATIVE-COLLABORA.md)).
+* Settings such as admin and database passwords are stored by Home Assistant in plain text in the add-on's options, like any add-on.
+* Docker Official Images don't ship signatures; pin an image digest if you need strict provenance ([updating](docs/UPDATING.md)).
+
+## Contributing and support
+
+Issues and pull requests are welcome. Please include the output of `nc-diag` (it never prints passwords) and the add-on log
+(passwords are redacted) when reporting a problem. CI runs ShellCheck, the Home Assistant add-on linter, hadolint, unit tests and the
+integration suite on amd64 and arm64.
+
+## License
+
+[MIT](LICENSE). Nextcloud and Collabora are separate projects with their own licenses; this repository only packages them.
