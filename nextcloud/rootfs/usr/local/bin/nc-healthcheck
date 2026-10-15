@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Docker HEALTHCHECK. Healthy only if Nextcloud is installed and not in maintenance, and, when Office
+# is enabled, the built-in CODE reports {"status":"OK"} (an HTTP 200 alone is NOT sufficient).
+set -uo pipefail
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/common.sh
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/diag-lib.sh
+
+st="$(curl -fsS --max-time 10 http://127.0.0.1/status.php 2>/dev/null)" || { echo "status.php unreachable"; exit 1; }
+jq -e '.installed == true and .maintenance == false' <<<"$st" >/dev/null || { echo "Nextcloud not ready (installing, upgrading or in maintenance)"; exit 1; }
+
+[ -r "$NC_OPTIONS_FILE" ] && [ "$(opt enable_office)" = true ] || exit 0
+app="$(code_app_id "$(detect_arch)")"
+host="$(url_host "$(opt public_url)")"; host="${host:-localhost}"
+res="$(curl -sS --max-time 20 -H "Host: $host" -H 'X-Forwarded-Proto: https' "http://127.0.0.1$(code_proxy_path "$app")?status" 2>/dev/null || true)"
+class="$(classify_code_status "$res")"
+[ "$class" = ok ] || { echo "CODE status: $class - $(code_error_hint "$class")"; exit 1; }

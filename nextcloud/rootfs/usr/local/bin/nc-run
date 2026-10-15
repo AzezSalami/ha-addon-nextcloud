@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Add-on main process: validate -> prepare storage -> database -> official entrypoint (Apache)
+# -> background cron + post-start configuration. Handles SIGTERM/SIGINT with a graceful stop.
+set -Eeuo pipefail
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/common.sh
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/validate.sh
+
+NC_LOG_LEVEL="$(jq -r '.log_level // "info"' "$NC_OPTIONS_FILE" 2>/dev/null || echo info)"
+export NC_LOG_LEVEL
+
+log info "Nextcloud official-image add-on starting"
+
+# ---- 1. platform checks -------------------------------------------------------------------
+ARCH="$(detect_arch)" || die "Unsupported architecture '$ARCH'. Built-in CODE needs x86_64 or aarch64 (see README compatibility matrix)."
+LIBC="$(detect_libc)"
+[ "$LIBC" = glibc ] || die "C library is '$LIBC', not glibc: the built-in CODE AppImage cannot run here (this is the cause of 'no_glibc')."
+log info "Platform: $ARCH, glibc $(glibc_version)"
+
+# ---- 2. options ---------------------------------------------------------------------------
+[ -r "$NC_OPTIONS_FILE" ] || die "Options file $NC_OPTIONS_FILE not found"
+NC_SECRET_VALUES+=("$(opt db_password)" "$(opt admin_password)")
+if ! msgs="$(validate_options "$NC_OPTIONS_FILE")"; then
+    printf '%s\n' "$msgs" | redact >&2
+    die "Configuration invalid; fix the add-on options and start again."
+fi
+[ -z "$msgs" ] || printf '%s\n' "$msgs" | redact
+
+PUBLIC_URL="$(opt public_url)"
+INTERNAL_URL="$(opt internal_url)"
+DATA_PATH="$(opt data_path)"
+DB_NAME="$(opt db_name)"
+export NC_LOG_LEVEL
+
+# ---- 3. database credentials --------------------------------------------------------------
+if [ "$(opt db_mode)" = supervisor ]; then
+    [ -n "${SUPERVISOR_TOKEN:-}" ] || die "db_mode=supervisor but no SUPERVISOR_TOKEN: use db_mode=external outside Home Assistant."
+    svc="$(curl -sSf --max-time 15 -H "Authorization: Bearer $SUPERVISOR_TOKEN" http://supervisor/services/mysql)" \
+        || die "No MariaDB service available. Install and start the 'MariaDB' add-on, or set db_mode=external."
+    DB_HOST="$(jq -r '.data.host' <<<"$svc")"
+    DB_PORT="$(jq -r '.data.port' <<<"$svc")"
+    DB_USER="$(jq -r '.data.username' <<<"$svc")"
+    DB_PASS="$(jq -r '.data.password' <<<"$svc")"
+    unset svc
+else
+    DB_HOST="$(opt db_host)"; DB_PORT="$(opt db_port)"; DB_USER="$(opt db_user)"; DB_PASS="$(opt db_password)"
+fi
+NC_SECRET_VALUES+=("$DB_PASS")
+export MYSQL_PWD="$DB_PASS"
+mdb() { mariadb --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$@"; }
+
+for i in $(seq 1 30); do mdb -e 'SELECT 1' >/dev/null 2>&1 && break
+    [ "$i" = 30 ] && die "Cannot connect to the database at $DB_HOST:$DB_PORT as '$DB_USER'. Is the MariaDB add-on running?"
+    sleep 2
+done
+if [ "$(opt db_mode)" = supervisor ]; then
+    # Non-destructive: creates the database only if it does not exist.
+    mdb -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci" >/dev/null 2>&1 || true
+fi
+mdb -e "USE \`$DB_NAME\`" >/dev/null 2>&1 || die "Database '$DB_NAME' does not exist and could not be created. Create it (utf8mb4) and restart."
+log info "Database reachable ($DB_HOST:$DB_PORT, db '$DB_NAME')"
+
+# ---- 4. persistent storage ----------------------------------------------------------------
+mkdir -p "$NC_WEBROOT" "$DATA_PATH"
+chown www-data:www-data "$DATA_PATH"
+chmod 0750 "$DATA_PATH"
+[ -f "$DATA_PATH/.ncdata" ] || [ ! -f "$NC_WEBROOT/config/config.php" ] || \
+    log warning "$DATA_PATH has no .ncdata marker although Nextcloud is installed; check data_path."
+
+if [ "$(opt migration_mode)" = true ]; then
+    log warning "MIGRATION MODE: Apache is NOT started. Run nc-migrate inside this container (docs/MIGRATION.md), then set migration_mode=false and restart."
+    trap 'exit 0' TERM INT
+    while true; do sleep 3600 & wait $! || true; done
+fi
+
+if nc_installed; then
+    IMG_VER="$(nc_code_version /usr/src/nextcloud/version.php)"
+    CUR_VER="$(nc_code_version)"
+    if [ -n "$CUR_VER" ] && [ "$CUR_VER" != "$IMG_VER" ]; then
+        ver_ge "$IMG_VER" "$CUR_VER" || die "Installed Nextcloud $CUR_VER is newer than the image ($IMG_VER). Downgrades are unsupported; restore a backup instead (see docs/ROLLBACK.md)."
+        log warning "Upgrade pending: $CUR_VER -> $IMG_VER. Creating a verified backup first."
+        nc-backup create --label "pre-upgrade-$CUR_VER" --offline || die "Pre-upgrade backup failed; refusing to upgrade."
+    fi
+else
+    validate_first_install "$NC_OPTIONS_FILE" || die "See above."
+    n="$(mdb -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$DB_NAME' AND table_name LIKE 'oc\\_%'")"
+    [ "${n:-0}" = 0 ] || die "Database '$DB_NAME' already contains $n Nextcloud tables but no config.php exists. Refusing to install over it. Use nc-migrate import or choose another db_name."
+    if [ -n "$(find "$DATA_PATH" -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit)" ]; then
+        die "data_path $DATA_PATH is not empty but Nextcloud is not installed. Refusing to install over existing data."
+    fi
+fi
+[ "$(opt backup_on_start)" != true ] || { nc_installed && nc-backup create --label on-start --offline || true; }
+
+# ---- 5. environment for the official entrypoint -------------------------------------------
+export MYSQL_HOST="$DB_HOST:$DB_PORT" MYSQL_DATABASE="$DB_NAME" MYSQL_USER="$DB_USER" MYSQL_PASSWORD="$DB_PASS"
+export NEXTCLOUD_DATA_DIR="$DATA_PATH"
+export PHP_MEMORY_LIMIT="$(opt php_memory_limit)" PHP_UPLOAD_LIMIT="$(opt upload_limit)"
+if ! nc_installed; then
+    export NEXTCLOUD_ADMIN_USER="$(opt admin_user)" NEXTCLOUD_ADMIN_PASSWORD="$(opt admin_password)"
+fi
+domains=()
+[ -z "$PUBLIC_URL" ] || domains+=("$(url_host "$PUBLIC_URL")")
+while IFS= read -r d; do [ -n "$d" ] && domains+=("$d"); done < <(opt_list trusted_domains)
+[ "${#domains[@]}" -gt 0 ] || domains+=(localhost)
+printf '%s\n' "${domains[@]}" >/run/nc-addon/trusted_domains
+export NEXTCLOUD_TRUSTED_DOMAINS="${domains[*]}"
+proxies="$(opt trusted_proxies)"
+[ -z "$proxies" ] || export TRUSTED_PROXIES="$proxies"
+if [ -n "$PUBLIC_URL" ]; then
+    export OVERWRITEPROTOCOL="$(url_scheme "$PUBLIC_URL")" OVERWRITEHOST="$(url_host "$PUBLIC_URL")" OVERWRITECLIURL="$PUBLIC_URL"
+fi
+
+# ---- 6. start ------------------------------------------------------------------------------
+child=0; cron_pid=0; post_pid=0; stopping=0
+stop_all() {
+    stopping=1
+    log info "Shutdown requested; stopping Apache gracefully"
+    [ "$cron_pid" -gt 0 ] && kill "$cron_pid" 2>/dev/null || true
+    [ "$post_pid" -gt 0 ] && kill "$post_pid" 2>/dev/null || true
+    [ "$child" -gt 0 ] && kill -WINCH "$child" 2>/dev/null || true   # Apache graceful-stop
+    local waited=0
+    while kill -0 "$child" 2>/dev/null && [ "$waited" -lt 60 ]; do sleep 1; waited=$((waited + 1)); done
+    kill -0 "$child" 2>/dev/null && kill -TERM "$child" 2>/dev/null || true
+    pkill -TERM -f coolwsd 2>/dev/null || true   # built-in CODE spawned by proxy.php
+}
+trap stop_all TERM INT
+
+/entrypoint-addon.sh apache2-foreground &
+child=$!
+
+cron_loop() {
+    local mode; mode="$(opt background_jobs)"
+    [ "$mode" = cron ] || exit 0
+    while true; do
+        sleep 300 &
+        wait $! || true
+        nc_installed || continue
+        runuser -u www-data -- php -f "$NC_WEBROOT/cron.php" >/dev/null 2>&1 || log warning "cron.php exited non-zero"
+    done
+}
+cron_loop & cron_pid=$!
+nc-post-start & post_pid=$!
+
+rc=0
+while kill -0 "$child" 2>/dev/null; do
+    wait "$child" || rc=$?
+done
+[ "$stopping" = 1 ] && { log info "Stopped cleanly"; exit 0; }
+log error "Apache exited unexpectedly (code $rc)"
+exit "${rc:-1}"

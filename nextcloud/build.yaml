@@ -1,0 +1,7 @@
+# Multi-arch tag; the registry resolves the correct platform for each builder.
+# Pin a digest for reproducible builds: see docs/UPDATING.md.
+build_from:
+  amd64: nextcloud:35.0.1-apache
+  aarch64: nextcloud:35.0.1-apache
+args:
+  NC_IMAGE_REV: "1"

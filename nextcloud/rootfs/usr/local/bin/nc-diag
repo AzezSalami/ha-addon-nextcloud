@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# nc-diag [--wait SECONDS] [--json]
+# Read-only diagnostic report. Never prints secrets and never alters TLS/WOPI/Cloudflare settings.
+# Exit code: 0 = no errors, 1 = at least one ERROR finding.
+set -uo pipefail
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/common.sh
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/diag-lib.sh
+NC_SECRET_VALUES+=("$(opt db_password 2>/dev/null)" "$(opt admin_password 2>/dev/null)")
+
+WAIT=0; JSON=0
+while [ $# -gt 0 ]; do
+    case "$1" in --wait) WAIT="${2:-0}"; shift ;; --json) JSON=1 ;; -h|--help) sed -n '2,5p' "$0"; exit 0 ;; esac
+    shift
+done
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+FINDINGS=()   # severity|code|message|hint
+LINES=()
+add()  { LINES+=("$1"); }
+finding() { FINDINGS+=("$1|$2|$3|${4:-}"); }
+
+PUBLIC_URL="$(opt public_url 2>/dev/null)"
+HOST="$(url_host "${PUBLIC_URL:-http://localhost}")"
+HOSTNAME_ONLY="${HOST%%:*}"
+ARCH="$(detect_arch)" ; ARCH_RC=$?
+LIBC="$(detect_libc)"
+
+# ---------------------------------------------------------------- runtime
+add "== Runtime"
+add "architecture        : $ARCH"
+add "libc                : $LIBC $(glibc_version)"
+add "php                 : $(php -r 'echo PHP_VERSION;')"
+add "nextcloud (image)   : $(nc_code_version /usr/src/nextcloud/version.php)"
+add "nextcloud (installed): $(nc_code_version)"
+mem_kb="$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null)"; mem_kb="${mem_kb:-0}"
+add "memory available    : $((mem_kb / 1024)) MiB"
+[ "$ARCH_RC" = 0 ] || finding ERROR unsupported_arch "Architecture '$ARCH' is not supported by built-in CODE" "Use x86_64 or aarch64, or the standalone Collabora alternative."
+[ "$LIBC" = glibc ] || finding ERROR missing_glibc "libc is '$LIBC'" "Built-in CODE requires glibc. Use the Debian-based official image."
+case "$(mem_assessment "$mem_kb")" in
+    critical) finding ERROR low_resources "Less than 1 GiB RAM available" "Built-in CODE needs roughly 1-2 GiB. Stop other add-ons or add RAM." ;;
+    low) finding WARN low_resources "Less than 2 GiB RAM available" "Large documents may fail to load." ;;
+esac
+fc=0; ldconfig -p 2>/dev/null | grep -q fontconfig && fc=1
+[ "$fc" = 1 ] || finding ERROR no_fontconfig "fontconfig not found" "$(code_error_hint no_fontconfig)"
+disabled="$(php -r 'echo ini_get("disable_functions");')"
+case ",$disabled," in *,exec,*|*,proc_open,*) finding ERROR exec_disabled "PHP exec/proc_open disabled" "$(code_error_hint exec_disabled)" ;; esac
+
+if ! nc_installed; then
+    finding ERROR not_installed "Nextcloud is not installed yet" "Wait for first start to finish or inspect the add-on log."
+fi
+
+# ---------------------------------------------------------------- nextcloud
+add ""; add "== Nextcloud"
+if nc_installed; then
+    sj="$(curl -sS --max-time 10 -H "Host: ${HOST}" http://127.0.0.1/status.php 2>/dev/null)"
+    add "status.php          : $(jq -c '{installed,maintenance,needsDbUpgrade,version:.versionstring}' <<<"$sj" 2>/dev/null || echo unreachable)"
+    jq -e '.installed == true and .maintenance == false and .needsDbUpgrade == false' <<<"$sj" >/dev/null 2>&1 \
+        || finding ERROR nextcloud_unhealthy "status.php does not report a healthy installation" "Check maintenance mode and pending upgrades: occ status"
+    apps="$(occ app:list --output=json 2>/dev/null)"
+    rd_ver="$(jq -r '.enabled.richdocuments // "not enabled"' <<<"$apps" 2>/dev/null)"
+    CODE_APP="$(code_app_id "$ARCH" 2>/dev/null)"
+    code_ver="$(jq -r --arg a "$CODE_APP" '.enabled[$a] // "not enabled"' <<<"$apps" 2>/dev/null)"
+    add "richdocuments       : $rd_ver"
+    add "${CODE_APP:-code app}: $code_ver"
+    [ "$rd_ver" != "not enabled" ] || finding ERROR office_app_missing "Nextcloud Office (richdocuments) is not enabled" "occ app:install richdocuments (needs a release compatible with this Nextcloud: incompatible_office)"
+    [ "$code_ver" != "not enabled" ] || finding ERROR code_app_missing "Built-in CODE app '$CODE_APP' is not enabled" "occ app:install $CODE_APP"
+    add "overwriteprotocol   : $(occ config:system:get overwriteprotocol 2>/dev/null || echo '<unset>')"
+    add "overwritehost       : $(occ config:system:get overwritehost 2>/dev/null || echo '<unset>')"
+    add "trusted_proxies set : $(occ config:system:get trusted_proxies 0 >/dev/null 2>&1 && echo yes || echo 'no (see TRUSTED_PROXIES / options)')"
+    add "trusted_domains     : $(occ config:system:get trusted_domains 2>/dev/null | tr '\n' ' ')"
+fi
+
+# ---------------------------------------------------------------- built-in CODE
+add ""; add "== Built-in CODE (local, via Apache)"
+class=unknown
+if [ -n "${CODE_APP:-}" ]; then
+    PROXY="$(code_proxy_path "$CODE_APP")"
+    add "proxy path          : $PROXY"
+    deadline=$((SECONDS + WAIT))
+    while :; do
+        res="$(curl -sS --max-time 30 -H "Host: ${HOST}" -H 'X-Forwarded-Proto: https' "http://127.0.0.1${PROXY}?status" 2>"$TMP/err")"
+        class="$(classify_code_status "$res")"
+        case "$class" in ok) break ;; starting|restarting|unparseable) [ $SECONDS -lt $deadline ] || break; sleep 5 ;; *) break ;; esac
+    done
+    add "proxy.php?status    : $class"
+    case "$class" in
+        ok) ;;
+        starting|restarting) finding ERROR code_startup_timeout "CODE still '$class' after ${WAIT}s" "Check memory, then 'nc-diag --wait 600'. $(code_error_hint starting)" ;;
+        unparseable) finding ERROR code_status_unparseable "Unexpected status response (HTTP body not JSON)" "Reverse-proxy or PHP error; check Apache/PHP logs. First bytes: $(printf '%s' "$res" | head -c 120 | tr -d '\n\r')" ;;
+        no_glibc|not_x86_64|not_linux) finding ERROR "$class" "CODE status error: $class" "$(code_error_hint "$class")" ;;
+        *) finding ERROR "code_$class" "CODE status error: $class" "$(code_error_hint "$class")" ;;
+    esac
+    if [ "$class" = ok ]; then
+        for ep in capabilities discovery; do
+            url="http://127.0.0.1${PROXY}?req=/hosting/$ep"
+            code="$(curl -sS --max-time 30 -o "$TMP/$ep" -w '%{http_code}' -H "Host: ${HOST}" -H 'X-Forwarded-Proto: https' "$url" 2>/dev/null)"
+            if [ "$ep" = capabilities ]; then valid=no; jq -e . "$TMP/$ep" >/dev/null 2>&1 && valid=yes
+            else valid=no; xml_valid "$TMP/$ep" && valid=yes; fi
+            add "hosting/$ep   : HTTP $code, well-formed=$valid"
+            [ "$code" = 200 ] && [ "$valid" = yes ] || finding ERROR "code_$ep" "/hosting/$ep invalid (HTTP $code, well-formed=$valid)" "CODE is running but not answering correctly; restart the add-on and re-run nc-diag."
+        done
+        add "note               : capabilities is JSON by design; discovery is XML (Collabora/WOPI)."
+        # Transport. Per proxy.php source it implements HTTP request proxying without Upgrade handling;
+        # the CODE client then falls back to HTTP long-polling (no browser WebSocket to the AppImage).
+        ws="$(curl -s -o /dev/null -m 10 -w '%{http_code}' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Host: ${HOST}" "http://127.0.0.1${PROXY}?req=/cool/ws" 2>/dev/null)"
+        add "websocket upgrade  : HTTP $ws (101 = native WS; otherwise the built-in server uses HTTP long-polling)"
+        [ "$ws" != 000 ] || finding WARN websocket_unreachable "WebSocket probe could not connect" "Check Apache and any reverse proxy in front of it forward Upgrade headers."
+    fi
+fi
+
+# ---------------------------------------------------------------- public path (DNS, TLS, Cloudflare)
+if [ -n "$PUBLIC_URL" ]; then
+    add ""; add "== Public URL $PUBLIC_URL (from inside the container)"
+    if getent hosts "$HOSTNAME_ONLY" >/dev/null 2>&1; then
+        add "dns                 : $(getent hosts "$HOSTNAME_ONLY" | awk '{print $1}' | head -n2 | tr '\n' ' ')"
+    else
+        add "dns                 : FAILED"
+        finding ERROR dns_failure "Container cannot resolve $HOSTNAME_ONLY" "Nextcloud/CODE must reach the public hostname. Check HA DNS settings; or set internal_url."
+    fi
+    code="$(curl -sS --max-time 20 -D "$TMP/h" -o "$TMP/b" -w '%{http_code}' "$PUBLIC_URL/status.php" 2>"$TMP/cerr")"; crc=$?
+    cc="$(classify_curl_exit "$crc")"
+    if [ "$cc" != ok ]; then
+        add "https status.php    : curl failed ($cc): $(tr -d '\n' <"$TMP/cerr" | head -c 160)"
+        case "$cc" in
+            tls) finding ERROR tls_failure "TLS certificate validation failed for $PUBLIC_URL" "Fix the certificate chain/CA. This add-on never disables verification. With Cloudflare Tunnel, point the container at a hostname with a valid cert." ;;
+            dns) finding ERROR dns_failure "Cannot resolve $HOSTNAME_ONLY" "See DNS hints in docs/CLOUDFLARE.md" ;;
+            refused|timeout) finding ERROR public_unreachable "Public URL $cc" "Container cannot reach itself through Cloudflare (hairpin). Check tunnel/ingress and DNS." ;;
+            *) finding ERROR public_unreachable "curl exit $crc" "" ;;
+        esac
+    else
+        hc="$(classify_http "$code" "$TMP/h" "$TMP/b")"
+        add "https status.php    : HTTP $code ($hc)"
+        case "$hc" in
+            ok) jq -e '.installed == true' "$TMP/b" >/dev/null 2>&1 || finding ERROR proxy_misconfig "Public URL answers 200 but not with Nextcloud status JSON" "A different service or an error page is served at $PUBLIC_URL; check the tunnel's service URL." ;;
+            cloudflare_access) finding ERROR cloudflare_access "Cloudflare Access challenge on $PUBLIC_URL/status.php" "Add a bypass policy for the server's egress/service token for /status.php and /apps/richdocumentscode/*; or call Nextcloud via internal_url. Access is not bypassed automatically." ;;
+            cloudflare_block) finding ERROR cloudflare_block "Cloudflare WAF/bot rule blocks the request" "Review Cloudflare security events." ;;
+            proxy_redirect) finding ERROR proxy_misconfig "Redirect from $PUBLIC_URL/status.php: $(grep -i '^location:' "$TMP/h" | head -n1 | tr -d '\r')" "Redirect loop/scheme mismatch: check overwriteprotocol, trusted_proxies and the tunnel service URL (http://<addon>:80)." ;;
+            bad_gateway) finding ERROR proxy_misconfig "Gateway error $code" "Tunnel cannot reach the add-on: check the tunnel's service URL/port." ;;
+            *) finding ERROR proxy_misconfig "Unexpected $hc" "" ;;
+        esac
+    fi
+    # Reverse-proxy header handling: loopback request carrying forwarded headers.
+    if nc_installed && [ "$(occ config:system:get overwriteprotocol 2>/dev/null)" != "$(url_scheme "$PUBLIC_URL")" ]; then
+        finding WARN overwriteprotocol "overwriteprotocol does not match public_url scheme" "Set public_url in the add-on options and restart."
+    fi
+fi
+
+# ---------------------------------------------------------------- Nextcloud -> CODE (WOPI) as seen by Nextcloud
+if nc_installed && [ "$class" = ok ]; then
+    add ""; add "== Nextcloud -> CODE (richdocuments:activate-config)"
+    out="$(occ richdocuments:activate-config 2>&1)"; orc=$?
+    # do not echo raw output (may contain URLs with tokens); show classification only
+    if [ "$orc" = 0 ]; then add "activate-config      : OK (discovery + capabilities fetched by Nextcloud)"
+    else
+        k="$(classify_occ_error "$out")"
+        add "activate-config      : FAILED ($k)"
+        case "$k" in
+            tls) finding ERROR tls_failure "Nextcloud cannot validate the TLS certificate of its own CODE URL" "Fix certificates; never disable verification." ;;
+            dns) finding ERROR dns_failure "Nextcloud cannot resolve its own hostname for the CODE URL" "Fix container DNS or set internal_url." ;;
+            cloudflare_access) finding ERROR cloudflare_access "Cloudflare Access blocks Nextcloud's call to itself" "See docs/CLOUDFLARE.md" ;;
+            timeout) finding ERROR code_startup_timeout "Request to CODE timed out" "Check memory and re-run with --wait." ;;
+            wopi) finding ERROR wopi_validation "WOPI host validation failed" "Check richdocuments wopi_allowlist and public URL; the add-on does not weaken WOPI protections." ;;
+            incompatible_office) finding ERROR incompatible_office "Incompatible Nextcloud Office version" "Update richdocuments / use a matching image tag." ;;
+            *) finding ERROR wopi_validation "activate-config failed: $(printf '%s' "$out" | head -c 160 | tr '\n' ' ')" "" ;;
+        esac
+    fi
+fi
+
+# ---------------------------------------------------------------- report
+errs=0; for f in "${FINDINGS[@]:-}"; do [ "${f%%|*}" = ERROR ] && errs=$((errs + 1)); done
+if [ "$JSON" = 1 ]; then
+    printf '%s\n' "${FINDINGS[@]:-}" | jq -R -s -c --arg arch "$ARCH" --arg libc "$LIBC" --arg code "$class" \
+        '{architecture:$arch, libc:$libc, code_status:$code, findings:(split("\n")|map(select(length>0)|split("|")|{severity:.[0],code:.[1],message:.[2],hint:.[3]}))}' | redact
+else
+    { echo "================ nc-diag report ================"
+      printf '%s\n' "${LINES[@]}"
+      echo ""; echo "== Findings"
+      if [ -z "${FINDINGS[*]:-}" ]; then echo "none - all checks passed"; else
+          for f in "${FINDINGS[@]}"; do IFS='|' read -r s c m h <<<"$f"; echo "[$s] $c: $m"; [ -z "$h" ] || echo "        -> $h"; done
+      fi; } | redact
+fi
+[ "$errs" = 0 ]

@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# nc-migrate preflight   --source-config FILE [--source-data DIR]
+# nc-migrate dump-source --source-config FILE --out FILE.sql.gz
+# nc-migrate import      --source-config FILE --source-data DIR --source-sql FILE.sql.gz
+#
+# Non-destructive by design: the SOURCE (old add-on, its database, its files) is only ever READ.
+# import writes ONLY to the new add-on's own (empty) database and data_path, and refuses otherwise.
+# Run inside the new add-on with migration_mode=true (Apache stopped). See docs/MIGRATION.md.
+set -Eeuo pipefail
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/common.sh
+
+SRC_CFG=""; SRC_DATA=""; SRC_SQL=""; OUT=""
+MODE="${1:-}"; shift || true
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --source-config) SRC_CFG="$2" ;; --source-data) SRC_DATA="$2" ;;
+        --source-sql) SRC_SQL="$2" ;; --out) OUT="$2" ;;
+        *) die "unknown option $1" ;;
+    esac; shift 2
+done
+
+PASS=1
+check() { # check OK|FAIL|WARN "message"
+    printf '  [%s] %s\n' "$1" "$2"
+    [ "$1" != FAIL ] || PASS=0
+}
+
+src_db() { # run a query against the SOURCE db (read-only use only)
+    mariadb --connect-timeout=10 -N -h "$SDBH" -P "$SDBP" -u "$SDBU" "$SDBN" -e "$1"
+}
+
+load_source() {
+    [ -r "$SRC_CFG" ] || die "--source-config '$SRC_CFG' not readable. Copy the old config.php to a path visible in this container (e.g. /share/nc-migration/config.php)."
+    db_connect_from_config "$SRC_CFG"
+    SDBH="$DBH"; SDBP="$DBP"; SDBN="$DBN"; SDBU="$DBU"; SMYSQL_PWD="$MYSQL_PWD"
+    SVER="$(cfg_get "$SRC_CFG" version)"
+    SDBTYPE="$(cfg_get "$SRC_CFG" dbtype)"
+    SDATADIR="$(cfg_get "$SRC_CFG" datadirectory)"
+    SPREFIX="$(cfg_get "$SRC_CFG" dbtableprefix)"; SPREFIX="${SPREFIX:-oc_}"
+}
+
+target_db() { # load target (new add-on) DB creds exactly like nc-run does
+    if [ "$(opt db_mode)" = supervisor ]; then
+        local svc; svc="$(curl -sSf --max-time 15 -H "Authorization: Bearer ${SUPERVISOR_TOKEN:-}" http://supervisor/services/mysql)" || die "MariaDB service unavailable"
+        TH="$(jq -r .data.host <<<"$svc")"; TP="$(jq -r .data.port <<<"$svc")"; TU="$(jq -r .data.username <<<"$svc")"; TPW="$(jq -r .data.password <<<"$svc")"
+    else
+        TH="$(opt db_host)"; TP="$(opt db_port)"; TU="$(opt db_user)"; TPW="$(opt db_password)"
+    fi
+    TN="$(opt db_name)"; NC_SECRET_VALUES+=("$TPW")
+}
+tdb() { MYSQL_PWD="$TPW" mariadb --connect-timeout=10 -h "$TH" -P "$TP" -u "$TU" "$@"; }
+
+do_preflight() {
+    load_source
+    echo "== Source"
+    check OK "config.php readable; version $SVER, dbtype '$SDBTYPE', datadirectory '$SDATADIR'"
+    echo "== Checks"
+    local img; img="$(nc_code_version /usr/src/nextcloud/version.php)"
+    local smaj="${SVER%%.*}" imaj="${img%%.*}"
+    if [ -z "$SVER" ]; then check FAIL "cannot read source version"
+    elif ver_ge "$img" "$SVER"; then
+        if [ $((imaj - smaj)) -le 1 ]; then check OK "image $img >= source $SVER (upgrade path ok; any upgrade runs on the NEW database only)"
+        else check FAIL "source $SVER is more than one major behind image $img; first upgrade the old install stepwise"; fi
+    else check FAIL "source $SVER is NEWER than image $img (downgrades unsupported)"; fi
+    case "$SDBTYPE" in
+        mysql) check OK "database engine MySQL/MariaDB" ;;
+        *) check FAIL "dbtype '$SDBTYPE' unsupported by nc-migrate. Convert in the OLD install first: occ db:convert-type --all-apps mysql ..." ;;
+    esac
+    if MYSQL_PWD="$SMYSQL_PWD" mariadb --connect-timeout=5 -h "$SDBH" -P "$SDBP" -u "$SDBU" "$SDBN" -e 'SELECT 1' >/dev/null 2>&1; then
+        check OK "source database reachable: $(src_db 'SELECT VERSION()') at $SDBH:$SDBP"
+        local enc; enc="$(src_db "SELECT configvalue FROM ${SPREFIX}appconfig WHERE appid='encryption' AND configkey='enabled'" 2>/dev/null || true)"
+        if [ "$enc" = yes ]; then check WARN "server-side ENCRYPTION is enabled: config.php 'secret' and files_encryption keys in the data dir MUST be preserved (nc-migrate does preserve both)"
+        else check OK "server-side encryption not enabled"; fi
+        echo "  enabled apps without code in this image (will try app:install after import):"
+        src_db "SELECT appid FROM ${SPREFIX}appconfig WHERE configkey='enabled' AND configvalue='yes'" 2>/dev/null \
+            | while read -r a; do [ -d "/usr/src/nextcloud/apps/$a" ] || echo "     - $a"; done
+    else
+        check WARN "source database not reachable from this container (host '$SDBH'). You must supply --source-sql from a dump taken elsewhere."
+    fi
+    local dd="${SRC_DATA:-$SDATADIR}"
+    if [ -d "$dd" ]; then
+        local sz free; sz="$(du -sk "$dd" 2>/dev/null | cut -f1)"; free="$(df -Pk "$(dirname "$(opt data_path)")" | awk 'NR==2{print $4}')"
+        check OK "source data dir $dd readable ($((sz/1024)) MiB)"
+        if [ "$free" -gt $((sz + sz/10)) ]; then check OK "enough free space at target ($((free/1024)) MiB free)"; else check FAIL "not enough free space at target ($((free/1024)) MiB free, need ~$((sz*11/10/1024)) MiB)"; fi
+        [ -f "$dd/.ncdata" ] && check OK ".ncdata marker present" || check WARN ".ncdata marker missing in source data dir"
+    else check FAIL "source data dir '$dd' not found/readable here. Pass --source-data DIR (copy it into /share first)."; fi
+    echo "== Target"
+    check OK "target architecture $(detect_arch), libc $(detect_libc)"
+    target_db
+    if tdb -e 'SELECT 1' >/dev/null 2>&1; then
+        local n; n="$(tdb -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$TN'")"
+        if [ "${n:-0}" = 0 ]; then check OK "target database '$TN' is empty"; else check FAIL "target database '$TN' already has $n tables (import refuses)"; fi
+    else check FAIL "cannot connect to target database"; fi
+    nc_installed && check FAIL "new add-on already has an installed Nextcloud (import refuses)" || check OK "new add-on has no installed instance"
+    [ -z "$(find "$(opt data_path)" -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit 2>/dev/null)" ] \
+        && check OK "target data_path empty" || check FAIL "target data_path not empty (import refuses)"
+    echo
+    [ "$PASS" = 1 ] && echo "PREFLIGHT PASSED" || { echo "PREFLIGHT FAILED"; return 1; }
+}
+
+do_dump() {
+    load_source; [ -n "$OUT" ] || die "--out required"
+    [ ! -e "$OUT" ] || die "$OUT exists; refusing to overwrite"
+    log info "Dumping source database '$SDBN' (read-only; STOP the old Nextcloud first for a consistent copy)"
+    mariadb-dump --single-transaction --quick --default-character-set=utf8mb4 -h "$SDBH" -P "$SDBP" -u "$SDBU" "$SDBN" | gzip -9 >"$OUT"
+    gzip -t "$OUT"; zcat "$OUT" | tail -n 5 | grep -q 'Dump completed' || die "dump incomplete"
+    ( cd "$(dirname "$OUT")" && sha256sum "$(basename "$OUT")" >"$(basename "$OUT").sha256" )
+    log info "Dump verified: $OUT"
+}
+
+do_import() {
+    [ -n "$SRC_SQL" ] && [ -n "$SRC_DATA" ] || die "--source-sql and --source-data are required"
+    do_preflight || die "Preflight failed; nothing was changed."
+    gzip -t "$SRC_SQL" && zcat "$SRC_SQL" | tail -n 5 | grep -q 'Dump completed' || die "SQL dump invalid/incomplete; nothing was changed."
+    [ ! -f "$SRC_SQL.sha256" ] || ( cd "$(dirname "$SRC_SQL")" && sha256sum -c "$(basename "$SRC_SQL").sha256" >/dev/null ) || die "SQL checksum mismatch"
+    local dest; dest="$(opt data_path)"
+    log info "Step 1/5: copying data (source is not modified)"
+    rsync -a --info=stats1 "$SRC_DATA"/ "$dest"/ | tail -n 4
+    chown -R www-data:www-data "$dest"
+    log info "Step 2/5: importing database into NEW database '$TN'"
+    gunzip -c "$SRC_SQL" | tdb "$TN"
+    log info "Step 3/5: installing Nextcloud code and writing config.php"
+    rsync -a --chown=www-data:www-data /usr/src/nextcloud/ "$NC_WEBROOT"/
+    mkdir -p "$NC_WEBROOT/config"
+    local ov; ov="$(mktemp)"
+    local dom; dom="$(url_host "$(opt public_url)")"; dom="${dom:-localhost}"
+    jq -n --arg dd "$dest" --arg h "$TH:$TP" --arg n "$TN" --arg u "$TU" --arg p "$TPW" --arg d "$dom" \
+        '{datadirectory:$dd, dbtype:"mysql", dbhost:$h, dbname:$n, dbuser:$u, dbpassword:$p, "mysql.utf8mb4":true, trusted_domains:[$d]}' >"$ov"
+    [ ! -f "$NC_WEBROOT/config/config.php" ] || cp -p "$NC_WEBROOT/config/config.php" "$NC_WEBROOT/config/config.php.pre-migration"
+    dropped="$(php /usr/local/lib/nc-addon/rewrite-config.php "$SRC_CFG" "$NC_WEBROOT/config/config.php" "$ov")"
+    rm -f "$ov"
+    chown www-data:www-data "$NC_WEBROOT/config/config.php"
+    [ -z "$dropped" ] || log info "config keys not carried over (container-specific): $(echo "$dropped" | tr '\n' ' ')"
+    log info "Step 4/5: upgrade on the NEW database if needed"
+    local cur img; cur="$(cfg_get "$NC_WEBROOT/config/config.php" version | cut -d. -f1-3)"; img="$(nc_code_version)"
+    if [ "$cur" != "$img" ]; then
+        occ upgrade || die "occ upgrade failed on the NEW database. The old install is untouched; drop the new DB tables and retry."
+    fi
+    log info "Step 5/5: installing enabled apps that have no code in this image"
+    while read -r a; do
+        [ -n "$a" ] || continue
+        if [ -d "$NC_WEBROOT/apps/$a" ] || [ -d "$NC_WEBROOT/custom_apps/$a" ]; then continue; fi
+        if occ app:install "$a" >/dev/null 2>&1; then log info "  installed $a"; else log warning "  could not install '$a' (no compatible release?) - it stays disabled"; fi
+    done < <(tdb -N "$TN" -e "SELECT appid FROM ${SPREFIX}appconfig WHERE configkey='enabled' AND configvalue='yes'")
+    occ maintenance:data-fingerprint >/dev/null || true
+    occ db:add-missing-indices >/dev/null 2>&1 || true
+    log info "Import finished. Next: set migration_mode=false and restart the add-on, then run: nc-diag"
+}
+
+case "$MODE" in
+    preflight) do_preflight ;;
+    dump-source) do_dump ;;
+    import) target_db; do_import ;;
+    *) sed -n '2,7p' "$0"; exit 2 ;;
+esac

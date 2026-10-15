@@ -1,0 +1,74 @@
+name: Nextcloud (official image + built-in CODE)
+version: "35.0.1-1"
+slug: nextcloud_official
+description: Nextcloud on the official Debian (glibc) image with Nextcloud Office and the built-in CODE server.
+url: https://github.com/AzezSalami/ha-addon-nextcloud
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: services
+boot: auto
+timeout: 90
+services:
+  - mysql:want
+map:
+  - addon_config:rw
+  - share:rw
+  - backup:rw
+ports:
+  80/tcp: null
+ports_description:
+  80/tcp: "Nextcloud HTTP (leave disabled when cloudflared runs as an add-on and targets the add-on hostname)"
+watchdog: "http://[HOST]:[PORT:80]/status.php"
+options:
+  public_url: ""
+  internal_url: ""
+  trusted_domains: []
+  trusted_proxies:
+    - "172.30.32.0/23"
+  db_mode: supervisor
+  db_host: ""
+  db_port: 3306
+  db_name: nextcloud
+  db_user: ""
+  db_password: ""
+  admin_user: ""
+  admin_password: ""
+  data_path: /data/nextcloud-data
+  background_jobs: cron
+  php_memory_limit: 1024M
+  upload_limit: 16G
+  default_phone_region: ""
+  enable_office: true
+  code_diagnostics: true
+  code_start_timeout: 240
+  backup_on_start: false
+  migration_mode: false
+  log_level: info
+schema:
+  public_url: str?
+  internal_url: str?
+  trusted_domains:
+    - str
+  trusted_proxies:
+    - str
+  db_mode: list(supervisor|external)
+  db_host: str?
+  db_port: port
+  db_name: str
+  db_user: str?
+  db_password: password?
+  admin_user: str?
+  admin_password: password?
+  data_path: str
+  background_jobs: list(cron|ajax|webcron)
+  php_memory_limit: match(^[0-9]+[MG]$)
+  upload_limit: match(^[0-9]+[MG]$)
+  default_phone_region: match(^([A-Z]{2})?$)?
+  enable_office: bool
+  code_diagnostics: bool
+  code_start_timeout: int(30,1800)
+  backup_on_start: bool
+  migration_mode: bool
+  log_level: list(debug|info|warning|error)

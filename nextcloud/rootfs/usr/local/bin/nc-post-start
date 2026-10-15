@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Runs in the background after Apache starts: applies add-on options to an installed instance,
+# installs/enables Nextcloud Office + built-in CODE, and runs diagnostics.
+set -uo pipefail
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/common.sh
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/diag-lib.sh
+NC_SECRET_VALUES+=("$(opt db_password)" "$(opt admin_password)")
+
+# 1. Wait for installation / upgrade to finish (can take many minutes on first start).
+for _ in $(seq 1 360); do
+    if curl -fsS --max-time 5 http://127.0.0.1/status.php 2>/dev/null | jq -e '.installed == true and .maintenance == false' >/dev/null 2>&1; then
+        ready=1; break
+    fi
+    sleep 5
+done
+[ "${ready:-0}" = 1 ] || { log error "Nextcloud did not become ready within 30 minutes; see log above."; exit 1; }
+log info "Nextcloud is up: $(curl -fsS http://127.0.0.1/status.php | jq -r '.versionstring')"
+
+# 2. Apply options (the add-on is the source of truth for these keys).
+PUBLIC_URL="$(opt public_url)"
+occ background:"$(opt background_jobs)" >/dev/null 2>&1 || log warning "could not set background job mode"
+[ -z "$PUBLIC_URL" ] || occ config:system:set overwrite.cli.url --value="$PUBLIC_URL" >/dev/null
+i=0
+while IFS= read -r d; do
+    [ -n "$d" ] && { occ config:system:set trusted_domains "$i" --value="$d" >/dev/null; i=$((i + 1)); }
+done </run/nc-addon/trusted_domains
+# remove stale entries beyond the configured list
+for j in $(seq "$i" 20); do occ config:system:delete trusted_domains "$j" >/dev/null 2>&1 || true; done
+region="$(opt default_phone_region)"
+[ -z "$region" ] || occ config:system:set default_phone_region --value="$region" >/dev/null
+occ config:system:set maintenance_window_start --type=integer --value=1 >/dev/null
+
+# 3. Nextcloud Office + built-in CODE.
+if [ "$(opt enable_office)" = true ]; then
+    ARCH="$(detect_arch)"
+    CODE_APP="$(code_app_id "$ARCH")"
+    log info "Setting up Nextcloud Office with built-in CODE app '$CODE_APP'"
+    for app in richdocuments "$CODE_APP"; do
+        if ! occ app:list --output=json 2>/dev/null | jq -e --arg a "$app" '(.enabled + .disabled) | has($a)' >/dev/null; then
+            if ! out="$(occ app:install "$app" 2>&1)"; then
+                kind="$(classify_occ_error "$out")"
+                log error "Installing '$app' failed ($kind): $out"
+                [ "$kind" != incompatible_office ] || log error "No release of '$app' is compatible with this Nextcloud yet. Pin an older image tag or use the standalone Collabora alternative (docs/ALTERNATIVE-COLLABORA.md)."
+                exit 1
+            fi
+        fi
+        occ app:enable "$app" >/dev/null 2>&1 || log error "Could not enable '$app'"
+    done
+    # Only one CODE flavour may be active.
+    for other in richdocumentscode richdocumentscode_arm64; do
+        [ "$other" = "$CODE_APP" ] || occ app:disable "$other" >/dev/null 2>&1 || true
+    done
+    if [ -n "$(opt internal_url)" ]; then
+        occ config:app:set richdocuments wopi_callback_url --value="$(opt internal_url)" >/dev/null
+    fi
+fi
+
+# 4. Diagnostics (read-only; never changes security settings).
+if [ "$(opt code_diagnostics)" = true ] && [ "$(opt enable_office)" = true ]; then
+    nc-diag --wait "$(opt code_start_timeout)" || log warning "Diagnostics reported problems; run 'nc-diag' for the full report."
+fi

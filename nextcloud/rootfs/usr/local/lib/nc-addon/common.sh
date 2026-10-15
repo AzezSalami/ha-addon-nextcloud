@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Shared helpers for the add-on scripts. Source, do not execute.
+
+NC_OPTIONS_FILE="${NC_OPTIONS_FILE:-/data/options.json}"
+NC_LOG_LEVEL="${NC_LOG_LEVEL:-info}"
+NC_WEBROOT="${NC_WEBROOT:-/data/nextcloud/html}"
+NC_STATE_DIR="${NC_STATE_DIR:-/data/nextcloud}"
+
+# Values that must never appear in logs. Callers add to this array.
+NC_SECRET_VALUES=()
+
+_log_rank() {
+    case "$1" in debug) echo 0 ;; info) echo 1 ;; warning) echo 2 ;; error) echo 3 ;; *) echo 1 ;; esac
+}
+
+# redact: stdin -> stdout with every registered secret replaced.
+redact() {
+    local line s
+    while IFS= read -r line || [ -n "$line" ]; do
+        for s in "${NC_SECRET_VALUES[@]}"; do
+            [ -n "$s" ] && line="${line//"$s"/***}"
+        done
+        printf '%s\n' "$line"
+    done
+}
+
+log() {
+    local level="$1"; shift
+    [ "$(_log_rank "$level")" -ge "$(_log_rank "$NC_LOG_LEVEL")" ] || return 0
+    printf '[%s] %-7s %s\n' "$(date -u +%H:%M:%S)" "$level" "$*" | redact
+}
+
+die() { log error "$*"; exit 1; }
+
+opt() { jq -r --arg k "$1" '.[$k] // empty | if type=="array" then join(" ") else tostring end' "$NC_OPTIONS_FILE"; }
+opt_list() { jq -r --arg k "$1" '.[$k] // [] | .[]' "$NC_OPTIONS_FILE"; }
+
+# detect_arch -> prints x86_64 or aarch64 (returns 1 and prints the raw value otherwise).
+# NC_UNAME_M overrides uname for tests.
+detect_arch() {
+    local m="${NC_UNAME_M:-$(uname -m)}"
+    case "$m" in
+        x86_64|amd64) echo x86_64 ;;
+        aarch64|arm64) echo aarch64 ;;
+        *) echo "$m"; return 1 ;;
+    esac
+}
+
+# code_app_id <arch> -> Nextcloud app id providing the built-in CODE for that architecture.
+code_app_id() {
+    case "$1" in
+        x86_64) echo richdocumentscode ;;
+        aarch64) echo richdocumentscode_arm64 ;;
+        *) return 1 ;;
+    esac
+}
+
+# detect_libc -> glibc | musl | unknown. NC_LIBC_OVERRIDE for tests.
+detect_libc() {
+    if [ -n "${NC_LIBC_OVERRIDE:-}" ]; then echo "$NC_LIBC_OVERRIDE"; return; fi
+    local out
+    out="$(ldd --version 2>&1 | head -n1 || true)"
+    case "$out" in
+        *[Mm]usl*) echo musl ;;
+        *GNU*|*GLIBC*|*glibc*) echo glibc ;;
+        *) echo unknown ;;
+    esac
+}
+
+glibc_version() { ldd --version 2>&1 | head -n1 | grep -oE '[0-9]+\.[0-9]+$' || true; }
+
+# ver_ge A B: true if version A >= B
+ver_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; }
+
+# url_host <url> -> host[:port]
+url_host() { printf '%s' "$1" | sed -E 's#^[a-zA-Z]+://([^/]+).*#\1#'; }
+url_scheme() { printf '%s' "$1" | sed -E 's#^([a-zA-Z]+)://.*#\1#'; }
+
+occ() { runuser -u www-data -- php -d memory_limit=-1 "$NC_WEBROOT/occ" "$@"; }
+
+nc_installed() { grep -qE "'installed'[[:space:]]*=>[[:space:]]*true" "$NC_WEBROOT/config/config.php" 2>/dev/null; }
+
+# cfg_get <config.php> <key>: scalar value from a Nextcloud config.php (empty if unset). Never use for secrets in logs.
+cfg_get() {
+    php -r 'include $argv[1]; $v = $CONFIG[$argv[2]] ?? ""; echo is_scalar($v) ? (string)$v : json_encode($v);' "$1" "$2" 2>/dev/null
+}
+
+# db_connect_from_config <config.php>: sets DBH DBP DBN DBU and exports MYSQL_PWD (do not log).
+db_connect_from_config() {
+    local c="$1" host
+    host="$(cfg_get "$c" dbhost)"
+    DBH="${host%%:*}"; DBP=3306
+    case "$host" in *:*) DBP="${host##*:}" ;; esac
+    DBN="$(cfg_get "$c" dbname)"; DBU="$(cfg_get "$c" dbuser)"
+    MYSQL_PWD="$(cfg_get "$c" dbpassword)"; export MYSQL_PWD
+    NC_SECRET_VALUES+=("$MYSQL_PWD")
+}
+
+# Code version from a version.php: prints e.g. 35.0.1
+nc_code_version() {
+    local f="${1:-$NC_WEBROOT/version.php}"
+    php -r 'include $argv[1]; echo implode(".", array_slice($OC_Version,0,3));' "$f" 2>/dev/null
+}
+
+# code_proxy_path <app id> -> web path of the CODE app proxy. Apps installed from the app store live in
+# custom_apps and are served under /custom_apps/, bundled apps under /apps/.
+code_proxy_path() {
+    if [ -d "$NC_WEBROOT/apps/$1" ]; then echo "/apps/$1/proxy.php"
+    elif [ -d "$NC_WEBROOT/custom_apps/$1" ]; then echo "/custom_apps/$1/proxy.php"
+    else echo "/apps/$1/proxy.php"; fi
+}
