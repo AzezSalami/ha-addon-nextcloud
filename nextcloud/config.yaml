@@ -8,7 +8,6 @@ arch:
   - aarch64
 init: false
 startup: services
-boot: auto
 timeout: 90
 services:
   - mysql:want
@@ -20,7 +19,6 @@ ports:
   80/tcp: null
 ports_description:
   80/tcp: "Nextcloud HTTP (leave disabled when cloudflared runs as an add-on and targets the add-on hostname)"
-watchdog: "http://[HOST]:[PORT:80]/status.php"
 options:
   public_url: ""
   internal_url: ""
