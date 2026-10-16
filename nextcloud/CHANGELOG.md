@@ -1,5 +1,8 @@
 # Changelog
 
+## 35.0.1-5
+* "Open Web UI" button on the add-on page (`webui`), pointing at the published HTTP port.
+
 ## 35.0.1-4
 * The add-on now publishes its HTTP port (container port 80) on host port 8099 by default; clear it under Network to disable LAN access.
 
