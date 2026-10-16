@@ -30,7 +30,8 @@ COPY rootfs/ /
 # persistent add-on path instead (pure path substitution; entrypoint logic is untouched).
 RUN set -eux;     sed "s#/var/www/html#/data/nextcloud/html#g" /entrypoint.sh > /entrypoint-addon.sh;     chmod 0755 /entrypoint-addon.sh;     sed -i "s#DocumentRoot /var/www/html#DocumentRoot /data/nextcloud/html#" /etc/apache2/sites-available/000-default.conf;     grep -q "/data/nextcloud/html" /entrypoint-addon.sh /etc/apache2/sites-available/000-default.conf
 RUN chmod 0755 /usr/local/bin/* /usr/local/lib/nc-addon/*.sh \
-    && mkdir -p /run/nc-addon
+    && mkdir -p /run/nc-addon /var/cache/fontconfig \
+    && chown www-data:www-data /var/cache/fontconfig
 
 # Single-purpose Apache config: only the Apache RemoteIP module from the base image is used.
 HEALTHCHECK --interval=60s --timeout=30s --start-period=15m --retries=3 \

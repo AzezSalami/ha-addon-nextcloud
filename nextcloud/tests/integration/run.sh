@@ -90,6 +90,11 @@ rm -f "$HERE/.disc.xml"
 check "healthcheck script" docker exec "$P-nc" nc-healthcheck
 dexec nc-diag >"$HERE/.diag.txt" 2>&1; grep -qi 'password\|secret' "$HERE/.diag.txt" && bad "diag leaks secret-like text" || ok "diag report has no secrets"
 grep -q 'proxy.php?status    : ok' "$HERE/.diag.txt" && ok "nc-diag reports CODE ok" || { bad "nc-diag CODE"; cat "$HERE/.diag.txt"; }
+grep -F 'activate-config      : OK' "$HERE/.diag.txt" >/dev/null && ok "Nextcloud can fetch discovery + capabilities from the built-in server (activate-config)" || { bad "activate-config"; cat "$HERE/.diag.txt"; }
+WOPI="$(dexec bash -c ". /usr/local/lib/nc-addon/common.sh; occ config:app:get richdocuments wopi_url")"
+[ "$WOPI" = "http://localhost${PROXY}?req=" ] && ok "wopi_url pre-configured from public_url" || bad "wopi_url is '$WOPI'"
+[ "$(dexec bash -c ". /usr/local/lib/nc-addon/common.sh; occ config:app:get richdocuments disable_certificate_verification" 2>/dev/null)" != yes ] && ok "TLS certificate verification for Office left on" || bad "certificate verification disabled"
+docker logs "$P-nc" 2>&1 | grep -E 'libfuse|No writable cache directories' >/dev/null && bad "noisy FUSE/fontconfig errors in log" || ok "no FUSE/fontconfig error noise in log"
 rm -f "$HERE/.diag.txt"
 docker logs "$P-nc" 2>&1 | grep -F "$PASS_ADMIN" >/dev/null && bad "admin password leaked into logs" || ok "no admin password in logs"
 docker logs "$P-nc" 2>&1 | grep -F "$PASS_DB" >/dev/null && bad "db password leaked into logs" || ok "no db password in logs"

@@ -77,3 +77,9 @@ The full suite above was re-run on the 35.0.2 image for both MariaDB and Postgre
 port with `ssl: true`; port 80 stays plain HTTP; a LAN visitor keeps its own address (`http(s)://192.168.1.50:8099/...`) instead of being redirected to `public_url`;
 a visitor arriving from a trusted proxy with `X-Forwarded-Proto: https` gets `https://<public_url>`; `force_public_url: true` pins links to `public_url`; a key that does not
 match the certificate, or a missing certificate file, stops the add-on with a clear message. The full MariaDB suite was re-run afterwards: 23/23. Unit tests: 108/108.
+
+### Nextcloud Office configuration (2026-10-16)
+
+Found from a real log: `nc-diag` reported `activate-config FAILED (wopi)` because Nextcloud Office had no server address (it only auto-configures when an admin opens Files in a browser,
+from that admin's address, and then disables TLS verification). The add-on now sets `wopi_url` from `public_url`. `tests/integration/run.sh` gained 4 checks (activate-config OK,
+`wopi_url` set, certificate verification left on, no FUSE/fontconfig noise in the log): 27 passed, 0 failed on MariaDB.

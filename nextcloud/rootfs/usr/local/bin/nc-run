@@ -103,6 +103,8 @@ else
     export MYSQL_HOST="$DB_HOST:$DB_PORT" MYSQL_DATABASE="$DB_NAME" MYSQL_USER="$DB_USER" MYSQL_PASSWORD="$DB_PASS"
 fi
 export NEXTCLOUD_DATA_DIR="$DATA_PATH"
+# Built-in CODE is an AppImage and containers have no FUSE: extract-and-run directly instead of failing the FUSE attempt first.
+export APPIMAGE_EXTRACT_AND_RUN=1
 PHP_MEMORY_LIMIT="$(opt php_memory_limit)"; PHP_UPLOAD_LIMIT="$(opt upload_limit)"
 export PHP_MEMORY_LIMIT PHP_UPLOAD_LIMIT
 if ! nc_installed; then

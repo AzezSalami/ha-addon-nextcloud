@@ -1,5 +1,10 @@
 # Changelog
 
+## 35.0.2-4
+* Nextcloud Office: the built-in server address is now set at start from `public_url` (previously Nextcloud Office only configured it when an admin first opened Files, from that admin's address, and then switched off TLS verification). A custom office server is never overwritten.
+* `nc-diag` reports "Nextcloud Office has no server address yet" as a warning instead of a misleading WOPI error, and shows the real error text on genuine failures.
+* Quieter logs: the AppImage is extracted directly (no FUSE error) and the fontconfig cache is writable.
+
 ## 35.0.2-3
 * HTTPS option: `ssl`, `certfile`, `keyfile` (certificates from Home Assistant's `/ssl`). Container port 443 is the web interface (HTTPS when `ssl` is on, plain HTTP otherwise) and is published on host port 8099 by default; port 80 is plain HTTP and no longer published by default. The certificate is validated before start.
 * The "Open Web UI" button follows `ssl` (`[PROTO:ssl]`).

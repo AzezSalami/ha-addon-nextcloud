@@ -118,3 +118,15 @@ Add the address you type to `trusted_domains` **with its port**, for example `19
 
 If visitors through your proxy get `http://` links or redirect loops, the proxy is not forwarding the headers: fix `trusted_proxies`, or turn on `force_public_url`
 (this pins all links to `public_url`, so opening the add-on by IP then redirects to the public address).
+
+## Nextcloud Office address
+
+Nextcloud Office must know the address of the built-in server, and browsers load the document editor from that address. The add-on sets it at every start
+from `public_url` (`<public_url>/custom_apps/richdocumentscode/proxy.php?req=`), so documents open the same way whatever address you used to log in. Consequences:
+
+* Set `public_url` to the address your users should edit documents through (normally your `https://` domain). Editing from the LAN then goes through that address too, so it needs
+  working DNS for the domain (it does not need to leave your network if your router resolves the domain locally).
+* If `public_url` is empty, Nextcloud Office configures itself later from the address of the first admin who opens the Files app. That upstream auto-setup also turns off TLS
+  certificate verification for the built-in server. The add-on logs a hint when this applies.
+* A custom office server entered in the Nextcloud Office admin settings is never overwritten.
+* `nc-diag` warns "Nextcloud Office has no server address yet" until one of the above has happened, and shows the real error if Nextcloud cannot reach the built-in server.

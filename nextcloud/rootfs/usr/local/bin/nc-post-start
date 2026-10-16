@@ -55,6 +55,23 @@ if [ "$(opt enable_office)" = true ]; then
     if [ -n "$(opt internal_url)" ]; then
         occ config:app:set richdocuments wopi_callback_url --value="$(opt internal_url)" >/dev/null
     fi
+    # Point Nextcloud Office at the built-in server. Without this, Nextcloud Office only configures it later,
+    # from the address of the first admin who opens the Files app (and then switches off TLS verification for it).
+    # Pre-configuring it from public_url makes the address deterministic and keeps certificate verification on.
+    # A custom (external) office server is never overwritten.
+    if [ -n "$PUBLIC_URL" ]; then
+        cur="$(occ config:app:get richdocuments wopi_url 2>/dev/null || true)"
+        want="$PUBLIC_URL$(code_proxy_path "$CODE_APP")?req="
+        if [ -z "$cur" ] || [[ "$cur" == *"proxy.php?req="* ]]; then
+            if [ "$cur" != "$want" ]; then
+                occ config:app:set richdocuments wopi_url --value="$want" >/dev/null && log info "Nextcloud Office uses the built-in server at $want"
+            fi
+        else
+            log info "Nextcloud Office already uses a custom office server; leaving wopi_url unchanged"
+        fi
+    else
+        log info "public_url is empty: an admin must open the Files app once so Nextcloud Office can configure the built-in server (set public_url to avoid this)"
+    fi
 fi
 
 # 4. Diagnostics (read-only; never changes security settings).

@@ -146,12 +146,21 @@ fi
 # ---------------------------------------------------------------- Nextcloud -> CODE (WOPI) as seen by Nextcloud
 if nc_installed && [ "$class" = ok ]; then
     add ""; add "== Nextcloud -> CODE (richdocuments:activate-config)"
-    out="$(occ richdocuments:activate-config 2>&1)"; orc=$?
-    # do not echo raw output (may contain URLs with tokens); show classification only
-    if [ "$orc" = 0 ]; then add "activate-config      : OK (discovery + capabilities fetched by Nextcloud)"
+    wopi_cfg="$(occ config:app:get richdocuments wopi_url 2>/dev/null || true)"
+    if [ -z "$wopi_cfg" ]; then
+        add "wopi_url            : <not configured yet>"
+        finding WARN office_not_configured "Nextcloud Office has no server address yet" "Set public_url and restart (the add-on then configures the built-in server), or log in as admin and open the Files app once so Nextcloud Office configures it from that address."
+        out=""; orc=skip
+    else
+        add "wopi_url            : $wopi_cfg"
+        out="$(occ richdocuments:activate-config 2>&1)"; orc=$?
+    fi
+    if [ "$orc" = skip ]; then :
+    elif [ "$orc" = 0 ]; then add "activate-config      : OK (discovery + capabilities fetched by Nextcloud)"
     else
         k="$(classify_occ_error "$out")"
         add "activate-config      : FAILED ($k)"
+        add "  output: $(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
         case "$k" in
             tls) finding ERROR tls_failure "Nextcloud cannot validate the TLS certificate of its own CODE URL" "Fix certificates; never disable verification." ;;
             dns) finding ERROR dns_failure "Nextcloud cannot resolve its own hostname for the CODE URL" "Fix container DNS or set internal_url." ;;
