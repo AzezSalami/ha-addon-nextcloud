@@ -8,14 +8,14 @@ for `nextcloud:35.0.1-apache` (amd64, arm64/v8, arm/v5, arm/v7, 386, ppc64le, s3
 
 | Platform | Base image | libc | Built-in CODE app | Add-on support |
 |---|---|---|---|---|
-| amd64 / x86_64 | `nextcloud:35.0.1-apache` (Debian trixie) | glibc | `richdocumentscode` | **Yes** – integration-tested (see TESTING.md) |
+| amd64 / x86_64 | `nextcloud:35.0.2-apache` (Debian trixie) | glibc | `richdocumentscode` | **Yes** – integration-tested (see TESTING.md) |
 | aarch64 / arm64 | same multi-arch tag | glibc | `richdocumentscode_arm64` | **Declared**; built and tested only if the CI arm64 job ran (see TESTING.md). Availability of a release of `richdocumentscode_arm64` matching NC 35 must be checked in the app store. |
 | armv7 / armhf, i386 | exists | glibc | none (AppImage is x86_64/aarch64 only) | **No** – the add-on refuses to start; use standalone Collabora on another host |
 | any | `*-fpm-alpine`, LinuxServer (Alpine) | **musl** | AppImage cannot run → `no_glibc` | **Never** |
 
 | Component | Version in this release |
 |---|---|
-| Nextcloud | 35.0.1 (image tag pinned; update per UPDATING.md) |
+| Nextcloud | 35.0.2 (image tag pinned; update per UPDATING.md) |
 | PHP | 8.5 (from the image) |
 | Nextcloud Office (`richdocuments`) | latest store release compatible with the installed Nextcloud (installed at first start) |
 | CODE app | latest store release compatible; the AppImage bundles its own Collabora Online build |

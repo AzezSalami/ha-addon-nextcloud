@@ -8,9 +8,9 @@
 * Before updating the add-on in Home Assistant: take a Home Assistant backup of the add-on **and** MariaDB.
 * Pin by digest for reproducible builds:
   ```bash
-  docker buildx imagetools inspect nextcloud:35.0.1-apache | grep Digest
+  docker buildx imagetools inspect nextcloud:35.0.2-apache | grep Digest
   ```
-  then use `nextcloud:35.0.1-apache@sha256:<digest>` in the Dockerfile `FROM` line.
+  then use `nextcloud:35.0.2-apache@sha256:<digest>` in the Dockerfile `FROM` line.
   The weekly CI job (`ci.yml`, schedule) rebuilds and re-runs the integration tests so upstream drift is noticed.
 * Provenance: the Docker Official Images are built by Docker Inc. and the Nextcloud tarball is GPG-verified inside the
   upstream build. Verify the digest you pin against the `nextcloud/docker` repository / Docker Hub page before pinning.

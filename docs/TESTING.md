@@ -41,7 +41,7 @@ See the section at the bottom of this file, filled in from the real run output.
 
 Unit suite: **94 passed, 0 failed.**
 
-Integration suite (`tests/integration/run.sh`, Nextcloud 35.0.1, Nextcloud Office + built-in CODE installed from the app store): **23 passed, 0 failed with MariaDB 11, and 23 passed, 0 failed with PostgreSQL 17** (`NC_TEST_DB=postgresql`).
+Integration suite (`tests/integration/run.sh`, Nextcloud 35.0.1 and again on 35.0.2, Nextcloud Office + built-in CODE installed from the app store): **23 passed, 0 failed with MariaDB 11, and 23 passed, 0 failed with PostgreSQL 17** (`NC_TEST_DB=postgresql`).
 
 | Check | Result |
 |---|---|
@@ -63,3 +63,10 @@ LinuxServer data.
 
 PostgreSQL note: Nextcloud's installer creates its own `oc_admin` role, which owns the tables but not the `public` schema, so `nc-backup restore` resets
 the database by dropping only the tables and sequences owned by the connecting role (dropping the schema failed in testing).
+
+### Upgrade test (2026-10-16): 35.0.1 → 35.0.2 on existing data
+
+`tests/integration/upgrade.sh <old-image> <new-image>` installs with the old add-on image, then starts the new image on the same volumes.
+Result: **10 passed, 0 failed** – the upgrade was detected, a verified `pre-upgrade-35.0.1` backup was created automatically, Nextcloud reported
+35.0.2 with no pending upgrade or maintenance mode, and the user and a test file were preserved. Run on MariaDB only (the logic is engine-independent).
+The full suite above was re-run on the 35.0.2 image for both MariaDB and PostgreSQL with 0 failures.

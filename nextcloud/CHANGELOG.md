@@ -1,5 +1,8 @@
 # Changelog
 
+## 35.0.2-1
+* Update to Nextcloud 35.0.2 (official `nextcloud:35.0.2-apache`). Existing installs upgrade automatically after a verified backup.
+
 ## 35.0.1-5
 * "Open Web UI" button on the add-on page (`webui`), pointing at the published HTTP port.
 
