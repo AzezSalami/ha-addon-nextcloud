@@ -37,7 +37,7 @@ HEALTHCHECK --interval=60s --timeout=30s --start-period=15m --retries=3 \
     CMD ["/usr/local/bin/nc-healthcheck"]
 
 LABEL io.hass.type="addon" \
-      io.hass.name="Nextcloud (official image + built-in CODE)" \
+      io.hass.name="Nextcloud" \
       io.hass.description="Nextcloud with Nextcloud Office and built-in CODE" \
       io.hass.arch="amd64|aarch64" \
       io.hass.version="${BUILD_VERSION}" \

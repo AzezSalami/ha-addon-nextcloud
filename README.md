@@ -35,7 +35,7 @@ document server.
    https://github.com/AzezSalami/ha-addon-nextcloud
    ```
 2. Install and start the **MariaDB** add-on if you don't already have it.
-3. Install **Nextcloud (official image + built-in CODE)**. The first install builds the image on your device and takes a few minutes.
+3. Install **Nextcloud**. The first install builds the image on your device and takes a few minutes.
 4. Open the add-on's **Configuration** tab and set at least:
    * `public_url`: the address you will use, e.g. `https://cloud.example.com`
    * `admin_user` and `admin_password`: needed only for the very first start (minimum 10 characters)

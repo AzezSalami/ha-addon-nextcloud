@@ -1,10 +1,10 @@
-# Nextcloud (official image + built-in CODE) – documentation
+# Nextcloud – documentation
 
 ## Install
 
 1. Home Assistant → Settings → Add-ons → Add-on store → ⋮ → Repositories → add this repository's URL.
 2. Install the **MariaDB** add-on (core) and start it (or prepare an external MariaDB 10.6+/11 or PostgreSQL and use `db_mode: external`; see *Using PostgreSQL* below).
-3. Install **Nextcloud (official image + built-in CODE)**. Building locally from the Dockerfile takes a few minutes.
+3. Install **Nextcloud**. Building locally from the Dockerfile takes a few minutes.
 4. Configure (below), start, watch the log. First start installs Nextcloud and then Nextcloud Office + built-in CODE.
 5. Run `nc-diag` (see Diagnostics). Tunnel setup: [../docs/CLOUDFLARE.md](../docs/CLOUDFLARE.md).
 
