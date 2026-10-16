@@ -83,3 +83,9 @@ match the certificate, or a missing certificate file, stops the add-on with a cl
 Found from a real log: `nc-diag` reported `activate-config FAILED (wopi)` because Nextcloud Office had no server address (it only auto-configures when an admin opens Files in a browser,
 from that admin's address, and then disables TLS verification). The add-on now sets `wopi_url` from `public_url`. `tests/integration/run.sh` gained 4 checks (activate-config OK,
 `wopi_url` set, certificate verification left on, no FUSE/fontconfig noise in the log): 27 passed, 0 failed on MariaDB.
+
+### Self-signed HTTPS for local IP access (2026-10-16)
+
+`ssl: true` with empty `certfile`/`keyfile`: `tests/integration/ssl.sh` now has 22 checks, 0 failed. The generated certificate verifies for the LAN IP and host name listed in
+`trusted_domains` (checked with `openssl s_client -verify_ip` / `-verify_hostname`; a different IP is rejected), the key is stored with mode 600, the certificate is kept across
+restarts and regenerated when `trusted_domains` changes. Unit tests: 122/122, ShellCheck clean. Not verified: how each browser presents the self-signed warning.

@@ -48,7 +48,9 @@ mk '.db_type="oracle"';                              rc "unknown db_type rejecte
 mk '.db_port=0';                                     rc "db_port 0 = engine default" 0 validate_options "$T/o.json"
 mk '.db_port=70000';                                 rc "db_port out of range" 1 validate_options "$T/o.json"
 mk '.ssl=true|.certfile="fullchain.pem"|.keyfile="privkey.pem"'; rc "ssl with default file names ok" 0 validate_options "$T/o.json"
-mk '.ssl=true|.certfile=""';                         rc "ssl needs certfile" 1 validate_options "$T/o.json"
+mk '.ssl=true|.certfile=""|.keyfile=""';             rc "ssl with both files empty = self-signed ok" 0 validate_options "$T/o.json"
+mk '.ssl=true|.certfile="a.pem"|.keyfile=""';        rc "certfile without keyfile rejected" 1 validate_options "$T/o.json"
+mk '.ssl=true|.certfile=""|.keyfile="k.pem"';        rc "keyfile without certfile rejected" 1 validate_options "$T/o.json"
 mk '.certfile="../etc/passwd"';                      rc "certfile path traversal rejected" 1 validate_options "$T/o.json"
 mk '.keyfile="sub/key.pem"';                         rc "keyfile with directory rejected" 1 validate_options "$T/o.json"
 mk '.ssl=false|.certfile="whatever.pem"';            rc "ssl off ignores file existence" 0 validate_options "$T/o.json"
@@ -89,6 +91,22 @@ eq "expiring-soon cert still accepted" "$rcx" 0
 case "$out" in *"expires within 14 days"*) eq "expiry warning printed" ok ok ;; *) eq "expiry warning printed" bad ok ;; esac
 export NC_APACHE_UI_CONF="$T/ui.conf" NC_WEBROOT=/data/nextcloud/html
 web_write_ui_conf false /x/c.pem /x/k.pem
+eq "SAN: ip, port stripped" "$(ssl_san_string 192.168.1.73:8099)" "DNS:localhost,IP:127.0.0.1,IP:192.168.1.73"
+eq "SAN: names and ips mixed" "$(ssl_san_string homeassistant.local:8099 192.168.1.73 cloud.example.com)" "DNS:localhost,IP:127.0.0.1,DNS:homeassistant.local,IP:192.168.1.73,DNS:cloud.example.com"
+eq "SAN: duplicates removed" "$(ssl_san_string 192.168.1.73:8099 192.168.1.73 localhost 127.0.0.1)" "DNS:localhost,IP:127.0.0.1,IP:192.168.1.73"
+eq "SAN: empty list still covers localhost" "$(ssl_san_string)" "DNS:localhost,IP:127.0.0.1"
+SAN="$(ssl_san_string 192.168.1.73:8099 homeassistant.local:8099)"
+ssl_selfsigned_ensure "$T/ss/cert.pem" "$T/ss/key.pem" "$SAN"; eq "self-signed generated" "$?" 0
+ssl_check_pair "$T/ss/cert.pem" "$T/ss/key.pem" >/dev/null; eq "generated pair passes the same checks" "$?" 0
+txt="$(openssl x509 -in "$T/ss/cert.pem" -noout -text)"
+case "$txt" in *"IP Address:192.168.1.73"*) eq "cert covers the LAN IP" ok ok ;; *) eq "cert covers the LAN IP" bad ok ;; esac
+case "$txt" in *"DNS:homeassistant.local"*) eq "cert covers the host name" ok ok ;; *) eq "cert covers the host name" bad ok ;; esac
+case "$txt" in *"TLS Web Server Authentication"*) eq "cert is marked for server auth" ok ok ;; *) eq "cert is marked for server auth" bad ok ;; esac
+r=0; [ "$(stat -c %a "$T/ss/key.pem")" = 600 ] || r=1; eq "private key mode 600" "$r" 0
+before="$(sha256sum "$T/ss/cert.pem")"; ssl_selfsigned_ensure "$T/ss/cert.pem" "$T/ss/key.pem" "$SAN"
+r=0; [ "$before" = "$(sha256sum "$T/ss/cert.pem")" ] || r=1; eq "unchanged addresses keep the same certificate" "$r" 0
+ssl_selfsigned_ensure "$T/ss/cert.pem" "$T/ss/key.pem" "$(ssl_san_string 192.168.1.99)"
+r=0; [ "$before" != "$(sha256sum "$T/ss/cert.pem")" ] || r=1; eq "changed addresses regenerate the certificate" "$r" 0
 grep -q '^Listen 443$' "$T/ui.conf" && ! grep -q SSLEngine "$T/ui.conf"; eq "ssl off: plain listener on 443" "$?" 0
 echo "-- architecture / runtime detection"
 eq "x86_64" "$(NC_UNAME_M=x86_64 detect_arch)" x86_64

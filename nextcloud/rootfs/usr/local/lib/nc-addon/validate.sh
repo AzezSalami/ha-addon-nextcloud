@@ -39,10 +39,11 @@ validate_options() {
             _err "$k must be a plain file name inside Home Assistant's /ssl folder (no directories): '$v'"
         fi
     done
+    # With ssl=true, certfile and keyfile either both name files in /ssl, or both stay empty
+    # (the add-on then generates a self-signed certificate for the addresses in trusted_domains).
     if [ "$(_get ssl)" = true ]; then
-        for k in certfile keyfile; do
-            [ -n "$(_get "$k")" ] || _err "ssl=true requires $k"
-        done
+        if [ -n "$(_get certfile)" ] && [ -z "$(_get keyfile)" ]; then _err "certfile is set but keyfile is empty (set both, or clear both for a self-signed certificate)"; fi
+        if [ -z "$(_get certfile)" ] && [ -n "$(_get keyfile)" ]; then _err "keyfile is set but certfile is empty (set both, or clear both for a self-signed certificate)"; fi
     fi
 
     case "$(_get db_type)" in

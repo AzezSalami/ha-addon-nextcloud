@@ -19,7 +19,7 @@ Existing install? Do **not** start with admin credentials; follow [../docs/MIGRA
 | `trusted_domains` | `[]` | Additional hostnames (`public_url` host is automatic; `localhost` if both empty). Managed by the add-on: manual entries are replaced at start. |
 | `force_public_url` | `false` | Pin every link and redirect to `public_url`, even for visitors using the LAN address. Only needed if your proxy does not forward the original `Host` and `X-Forwarded-Proto` headers. |
 | `ssl` | `false` | Serve the web interface over HTTPS with a certificate from Home Assistant's `/ssl` folder. |
-| `certfile`, `keyfile` | `fullchain.pem`, `privkey.pem` | File names inside `/ssl` (no directories). Used only when `ssl` is `true`. |
+| `certfile`, `keyfile` | empty | Certificate and key file names inside Home Assistant's `/ssl` folder (no directories). **Leave both empty** to let the add-on generate a self-signed certificate for the addresses in `trusted_domains`. Used only when `ssl` is `true`. |
 | `trusted_proxies` | `172.30.32.0/23` | IPs/CIDRs allowed to set `X-Forwarded-*`. Never `0.0.0.0/0`. |
 | `db_type` | `mariadb` | `mariadb` or `postgresql`. PostgreSQL requires `db_mode: external`. |
 | `db_mode` | `supervisor` | `supervisor` = MariaDB add-on via Supervisor service discovery (database is created if missing). `external` = `db_host/db_port/db_user/db_password`. |
@@ -105,11 +105,16 @@ The add-on listens on two container ports:
 | `443/tcp` | the web interface: **HTTPS when `ssl` is on, plain HTTP when it is off** | host port `8099` (the **Open Web UI** button uses it) |
 | `80/tcp` | always plain HTTP, for a tunnel or reverse proxy on the internal network | not published |
 
-**Enable HTTPS:** set `ssl: true` and make sure `certfile` / `keyfile` name files that exist in Home Assistant's `/ssl` folder (for example from the
-Let's Encrypt or DuckDNS add-on). The add-on checks the certificate before starting: it must be a valid PEM file, the key must be unencrypted and belong
-to it, and it must not be expired (a warning appears 14 days before expiry). If anything is wrong the add-on stops with a clear message instead of starting without TLS.
-A certificate is valid only for its own host names, so opening `https://192.168.1.50:8099` by IP shows a browser warning; use the host name on the certificate
-(a local DNS entry pointing to your Home Assistant works) or accept the warning for local use.
+**Enable HTTPS, simplest (local use by IP):** set `ssl: true`, leave `certfile` and `keyfile` empty, and list the address you use in `trusted_domains` with its port, for example
+`192.168.1.73:8099`. The add-on generates a self-signed certificate that covers every address in `trusted_domains` (IP addresses and host names) plus `localhost`, keeps it across restarts,
+and regenerates it when that list changes or it is about to expire. Then open `https://192.168.1.73:8099`. Because nobody vouches for a self-signed certificate, the browser shows a
+warning the first time: choose *Advanced → Continue* once per device. To remove the warning, import the public certificate the add-on copies to `/share/nextcloud/selfsigned-certificate.crt`
+into the trusted certificate store of your devices. The private key never leaves the add-on's `/data`.
+
+**Enable HTTPS with a real certificate:** set `ssl: true` and put the file names in `certfile` / `keyfile` (files in Home Assistant's `/ssl` folder, for example from the Let's Encrypt or DuckDNS add-on).
+The add-on checks the certificate before starting: it must be a valid PEM file, the key must be unencrypted and belong to it, and it must not be expired (a warning appears 14 days before expiry).
+If anything is wrong the add-on stops with a clear message instead of starting without TLS. A real certificate is valid only for its own host names, so opening it by IP shows a browser warning;
+use the host name on the certificate (a local DNS entry pointing to your Home Assistant works), or use the self-signed option above for IP access.
 
 **Local access without the internet:** web requests keep the address they arrive on, so `http(s)://<ip>:8099` stays on that IP and nothing leaves your network.
 Add the address you type to `trusted_domains` **with its port**, for example `192.168.1.50:8099` or `homeassistant.local:8099`; otherwise Nextcloud answers

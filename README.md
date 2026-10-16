@@ -62,7 +62,7 @@ copies your data and database into the new add-on and leaves the old one untouch
 | `public_url` | Your public address. Sets trusted domains and HTTPS handling. |
 | `trusted_domains` | Extra hostnames (for example a local name). |
 | `trusted_proxies` | Addresses of your reverse proxy / tunnel that may set forwarded headers. |
-| `ssl`, `certfile`, `keyfile` | HTTPS for the web interface using certificates from Home Assistant's `/ssl` folder. |
+| `ssl`, `certfile`, `keyfile` | HTTPS for the web interface. Leave the file names empty for an automatic self-signed certificate that covers the addresses in `trusted_domains` (works for `https://<ip>:<port>`, browser warns once), or name certificate files from Home Assistant's `/ssl` folder. |
 | `force_public_url` | Pin all links to `public_url` (off by default, so local access by IP stays local). |
 | `db_type`, `db_mode`, `db_*` | MariaDB add-on (default), or an external MariaDB/PostgreSQL server (see [PostgreSQL setup](nextcloud/DOCS.md#using-postgresql)). |
 | `data_path` | Where user files are stored. Use `/share/...` for a large disk. |

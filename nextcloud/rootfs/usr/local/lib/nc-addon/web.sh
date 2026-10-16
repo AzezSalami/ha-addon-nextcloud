@@ -30,6 +30,40 @@ ssl_check_pair() {
     return $rc
 }
 
+# ssl_san_string <host[:port]>...: subjectAltName value for a certificate covering those addresses
+# (IPv4 addresses become IP entries, names become DNS entries; localhost and 127.0.0.1 are always included).
+ssl_san_string() {
+    local h out="DNS:localhost,IP:127.0.0.1" seen=" localhost 127.0.0.1 "
+    for h in "$@"; do
+        h="${h%%:*}"                       # drop :port (IPv6 literals are not supported here)
+        [ -n "$h" ] || continue
+        case "$seen" in *" $h "*) continue ;; esac
+        seen="$seen$h "
+        if [[ "$h" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then out="$out,IP:$h"; else out="$out,DNS:$h"; fi
+    done
+    printf '%s' "$out"
+}
+
+# ssl_selfsigned_ensure <cert> <key> <san-string>: create (or renew) a self-signed certificate.
+# It is regenerated when missing, when the address list changed, or when it expires within 30 days.
+ssl_selfsigned_ensure() {
+    local cert="$1" key="$2" san="$3" stamp
+    stamp="$(dirname "$cert")/.san"
+    if [ -r "$cert" ] && [ -r "$key" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$san" ] \
+       && openssl x509 -in "$cert" -noout -checkend 2592000 >/dev/null 2>&1; then
+        return 0
+    fi
+    mkdir -p "$(dirname "$cert")" || return 1
+    local cn="${san#*DNS:localhost,IP:127.0.0.1}"; cn="${cn#,}"; cn="${cn%%,*}"; cn="${cn#*:}"; cn="${cn:-localhost}"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 730 -keyout "$key" -out "$cert" \
+        -subj "/CN=$cn/O=Nextcloud Home Assistant add-on" \
+        -addext "subjectAltName=$san" -addext "basicConstraints=critical,CA:FALSE" \
+        -addext "keyUsage=critical,digitalSignature,keyEncipherment" -addext "extendedKeyUsage=serverAuth" \
+        >/dev/null 2>&1 || return 1
+    chmod 600 "$key"; chmod 644 "$cert"
+    printf '%s' "$san" >"$stamp"
+}
+
 # web_write_ui_conf <true|false> <cert> <key>: writes the Apache config for container port 443.
 web_write_ui_conf() {
     local ssl="$1" cert="$2" key="$3"

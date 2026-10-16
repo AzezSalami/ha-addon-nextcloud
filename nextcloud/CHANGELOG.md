@@ -1,5 +1,8 @@
 # Changelog
 
+## 35.0.2-5
+* `ssl: true` with empty `certfile`/`keyfile` now generates a self-signed certificate covering the addresses in `trusted_domains` (IPs and host names) and `localhost`, so `https://<ip>:<port>` works without certificate files. It is kept across restarts, regenerated when the address list changes or 30 days before expiry, and its public part is copied to `/share/nextcloud/selfsigned-certificate.crt`. `certfile`/`keyfile` now default to empty; naming files in `/ssl` still uses them (and fails clearly if they are unusable).
+
 ## 35.0.2-4
 * Nextcloud Office: the built-in server address is now set at start from `public_url` (previously Nextcloud Office only configured it when an admin first opened Files, from that admin's address, and then switched off TLS verification). A custom office server is never overwritten.
 * `nc-diag` reports "Nextcloud Office has no server address yet" as a warning instead of a misleading WOPI error, and shows the real error text on genuine failures.

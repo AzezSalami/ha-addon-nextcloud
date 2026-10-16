@@ -136,12 +136,20 @@ fi
 SSL_ENABLED="$(opt ssl)"; SSL_ENABLED="${SSL_ENABLED:-false}"
 SSL_CERT="$NC_SSL_DIR/$(opt certfile)"; SSL_KEY="$NC_SSL_DIR/$(opt keyfile)"
 if [ "$SSL_ENABLED" = true ]; then
+    if [ -z "$(opt certfile)" ] && [ -z "$(opt keyfile)" ]; then
+        # No certificate files configured: generate a self-signed one for the addresses in trusted_domains / public_url.
+        SSL_CERT="$NC_STATE_DIR/ssl-selfsigned/cert.pem"; SSL_KEY="$NC_STATE_DIR/ssl-selfsigned/key.pem"
+        ssl_selfsigned_ensure "$SSL_CERT" "$SSL_KEY" "$(ssl_san_string "${domains[@]}")" \
+            || die "Could not generate a self-signed certificate."
+        [ ! -d /share ] || { mkdir -p /share/nextcloud && cp -f "$SSL_CERT" /share/nextcloud/selfsigned-certificate.crt 2>/dev/null || true; }
+        log warning "HTTPS uses a self-signed certificate for: $(ssl_san_string "${domains[@]}"). Browsers show a warning for it; accept it once, or trust /share/nextcloud/selfsigned-certificate.crt on your devices. For a trusted certificate put certfile/keyfile from Home Assistant's /ssl folder in the options."
+    fi
     if ! msgs="$(ssl_check_pair "$SSL_CERT" "$SSL_KEY")"; then
         printf '%s\n' "$msgs" >&2
-        die "ssl is enabled but the certificate cannot be used. Fix certfile/keyfile (files in Home Assistant's /ssl folder) or set ssl to false."
+        die "ssl is enabled but the certificate cannot be used. Fix certfile/keyfile (files in Home Assistant's /ssl folder), clear both for a self-signed certificate, or set ssl to false."
     fi
     [ -z "$msgs" ] || printf '%s\n' "$msgs"
-    log info "HTTPS enabled on the web interface port (container 443), certificate $(opt certfile)"
+    log info "HTTPS enabled on the web interface port (container 443)"
 else
     log info "Web interface port (container 443) serves plain HTTP; set ssl to true for HTTPS"
 fi

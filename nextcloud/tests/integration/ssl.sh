@@ -68,6 +68,21 @@ L="$(location -k -H 'Host: 192.168.1.50:8099' https://127.0.0.1:443/)"; echo "  
 echo "$L" | grep -F 'https://192.168.1.50:8099/' >/dev/null && ok "HTTPS LAN access stays on its own address" || bad "https LAN: $L"
 docker logs "$P-nc" 2>&1 | grep -F "HTTPS enabled on the web interface port" >/dev/null && ok "log says HTTPS enabled" || bad "log line"
 
+echo "### ssl=true with certfile/keyfile empty -> self-signed certificate for the trusted addresses"
+setopts_ss() { docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq --argjson d "$1" '.certfile="" | .keyfile="" | .trusted_domains=$d')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'; }
+CRT=/data/nextcloud/ssl-selfsigned/cert.pem
+setopts_ss '["192.168.1.50:8099","homeassistant.local:8099"]'; docker restart -t 30 "$P-nc" >/dev/null; ready 300 || { bad "restart with self-signed"; docker logs "$P-nc" 2>&1 | tail -n 15; }
+dx curl -fsS --cacert $CRT https://127.0.0.1:443/status.php | grep '"installed":true' >/dev/null && ok "self-signed HTTPS works (certificate verifies as its own CA)" || bad "self-signed HTTPS"
+dx bash -c "openssl s_client -connect 127.0.0.1:443 -CAfile $CRT -verify_ip 192.168.1.50 -verify_return_error </dev/null 2>&1" | grep 'Verify return code: 0' >/dev/null && ok "https://<ip>:<port> verifies: the certificate covers the LAN IP 192.168.1.50" || bad "certificate does not cover the LAN IP"
+dx bash -c "openssl s_client -connect 127.0.0.1:443 -CAfile $CRT -verify_hostname homeassistant.local -verify_return_error </dev/null 2>&1" | grep 'Verify return code: 0' >/dev/null && ok "certificate covers the host name homeassistant.local too" || bad "host name not covered"
+docker logs "$P-nc" 2>&1 | grep -F 'self-signed certificate for' >/dev/null && ok "log explains the self-signed certificate" || bad "no self-signed notice in log"
+dx test -f /data/nextcloud/ssl-selfsigned/key.pem && [ "$(dx stat -c %a /data/nextcloud/ssl-selfsigned/key.pem)" = 600 ] && ok "private key stored with mode 600" || bad "key permissions"
+SUM1="$(dx sha256sum $CRT | cut -d' ' -f1)"
+docker restart -t 30 "$P-nc" >/dev/null; ready 300; SUM2="$(dx sha256sum $CRT | cut -d' ' -f1)"
+[ "$SUM1" = "$SUM2" ] && ok "certificate is kept across restarts (browser exception stays valid)" || bad "certificate changed on restart"
+setopts_ss '["192.168.1.50:8099","10.9.8.7:8099"]'; docker restart -t 30 "$P-nc" >/dev/null; ready 300
+dx openssl x509 -in $CRT -noout -text | grep 'IP Address:10.9.8.7' >/dev/null && ok "certificate is regenerated when trusted_domains changes" || bad "no regeneration"
+
 echo "### bad certificates are refused with a clear message"
 docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq '.keyfile="other.key"')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'
 docker restart -t 30 "$P-nc" >/dev/null; sleep 12
