@@ -10,9 +10,9 @@ Browser ──HTTPS──> Cloudflare ──tunnel──> cloudflared ──HTTP
                                                                    │ built-in CODE (127.0.0.1:9983, via proxy.php)
 ```
 
-* Leave the add-on's port `80/tcp` **disabled** when `cloudflared` runs as a Home Assistant add-on. Target
+* The add-on publishes plain HTTP on host port `8099` by default (Configuration → Network). If `cloudflared` runs as a Home Assistant add-on you can clear that port (leave it empty) so nothing is reachable on the LAN except through the tunnel. Target
   `http://<repo-hash>-nextcloud-official:80` (shown as the add-on hostname on its Info page, with `_` replaced by `-`).
-  If `cloudflared` runs elsewhere, enable port 80 and bind it only on a trusted LAN; never port-forward it.
+  If `cloudflared` runs elsewhere, keep the port enabled and use it only on a trusted LAN; never port-forward it on your router.
 * TLS terminates at Cloudflare. The tunnel→add-on hop is plain HTTP on the internal Supervisor network.
 
 ## Add-on options

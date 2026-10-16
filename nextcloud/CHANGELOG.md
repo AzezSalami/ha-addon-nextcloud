@@ -1,5 +1,8 @@
 # Changelog
 
+## 35.0.1-4
+* The add-on now publishes its HTTP port (container port 80) on host port 8099 by default; clear it under Network to disable LAN access.
+
 ## 35.0.1-3
 * Fix: the Supervisor overrides the `BUILD_FROM` build argument with its own Alpine image, which broke the build (`apt-get: command not found`). The Dockerfile now pins the official Debian-based Nextcloud image directly, and CI builds with the Supervisor's arguments to prevent a regression.
 

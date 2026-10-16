@@ -40,7 +40,7 @@ document server.
    * `public_url`: the address you will use, e.g. `https://cloud.example.com`
    * `admin_user` and `admin_password`: needed only for the very first start (minimum 10 characters)
 5. Start the add-on and watch the **Log** tab. The first start installs Nextcloud, then Nextcloud Office.
-6. Make it reachable (see [Cloudflare Tunnel](docs/CLOUDFLARE.md) or enable the add-on's port 80 and use your own reverse proxy).
+6. Make it reachable (see [Cloudflare Tunnel](docs/CLOUDFLARE.md) or use the add-on's HTTP port, `8099` by default under Configuration → Network, behind your own reverse proxy; local test: `http://<HA-IP>:8099` after adding that address to `trusted_domains`).
 7. Check everything with the diagnostics report:
    ```bash
    docker exec addon_<repository-hash>_nextcloud_official nc-diag
