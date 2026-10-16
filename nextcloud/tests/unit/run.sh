@@ -6,7 +6,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="${NC_LIB_DIR:-$HERE/../../rootfs/usr/local/lib/nc-addon}"
 # shellcheck source=/dev/null
-. "$LIB/common.sh"; . "$LIB/validate.sh"; . "$LIB/diag-lib.sh"
+. "$LIB/common.sh"; . "$LIB/validate.sh"; . "$LIB/diag-lib.sh"; . "$LIB/web.sh"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 PASS=0; FAIL=0
 eq() { if [ "$2" = "$3" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo "FAIL: $1: expected '$3' got '$2'"; fi; }
@@ -47,6 +47,11 @@ mk '.db_type="mariadb"';                             rc "mariadb explicit ok" 0 
 mk '.db_type="oracle"';                              rc "unknown db_type rejected" 1 validate_options "$T/o.json"
 mk '.db_port=0';                                     rc "db_port 0 = engine default" 0 validate_options "$T/o.json"
 mk '.db_port=70000';                                 rc "db_port out of range" 1 validate_options "$T/o.json"
+mk '.ssl=true|.certfile="fullchain.pem"|.keyfile="privkey.pem"'; rc "ssl with default file names ok" 0 validate_options "$T/o.json"
+mk '.ssl=true|.certfile=""';                         rc "ssl needs certfile" 1 validate_options "$T/o.json"
+mk '.certfile="../etc/passwd"';                      rc "certfile path traversal rejected" 1 validate_options "$T/o.json"
+mk '.keyfile="sub/key.pem"';                         rc "keyfile with directory rejected" 1 validate_options "$T/o.json"
+mk '.ssl=false|.certfile="whatever.pem"';            rc "ssl off ignores file existence" 0 validate_options "$T/o.json"
 eq "kind mariadb" "$(db_kind_to_type mariadb)" mysql
 eq "kind postgresql" "$(db_kind_to_type postgresql)" pgsql
 eq "kind empty defaults to mysql" "$(db_kind_to_type '')" mysql
@@ -67,6 +72,24 @@ sed -i "s/'pg.local'/'pg.local:6543'/" "$T/pg.php"; db_connect_from_config "$T/p
 eq "config.php explicit port" "$DBP" 6543
 NC_SECRET_VALUES=()
 
+
+echo "-- ssl certificate checks"
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$T/k.pem" -out "$T/c.pem" -days 90 -subj "/CN=test.local" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$T/k2.pem" -out "$T/c2.pem" -days 90 -subj "/CN=other.local" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$T/k3.pem" -out "$T/c3.pem" -days 5 -subj "/CN=soon.local" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -keyout "$T/kenc.pem" -passout pass:secret -out "$T/cenc.pem" -days 90 -subj "/CN=enc.local" >/dev/null 2>&1
+ssl_check_pair "$T/c.pem" "$T/k.pem" >/dev/null;               eq "matching pair accepted" "$?" 0
+ssl_check_pair "$T/c.pem" "$T/k2.pem" >/dev/null;              eq "mismatched key rejected" "$?" 1
+ssl_check_pair "$T/nope.pem" "$T/k.pem" >/dev/null;            eq "missing certificate rejected" "$?" 1
+ssl_check_pair "$T/c.pem" "$T/nope.pem" >/dev/null;            eq "missing key rejected" "$?" 1
+echo "not a cert" >"$T/bad.pem"; ssl_check_pair "$T/bad.pem" "$T/k.pem" >/dev/null; eq "garbage certificate rejected" "$?" 1
+ssl_check_pair "$T/cenc.pem" "$T/kenc.pem" >/dev/null;         eq "encrypted key rejected (no prompt)" "$?" 1
+out="$(ssl_check_pair "$T/c3.pem" "$T/k3.pem")"; rcx=$?
+eq "expiring-soon cert still accepted" "$rcx" 0
+case "$out" in *"expires within 14 days"*) eq "expiry warning printed" ok ok ;; *) eq "expiry warning printed" bad ok ;; esac
+export NC_APACHE_UI_CONF="$T/ui.conf" NC_WEBROOT=/data/nextcloud/html
+web_write_ui_conf false /x/c.pem /x/k.pem
+grep -q '^Listen 443$' "$T/ui.conf" && ! grep -q SSLEngine "$T/ui.conf"; eq "ssl off: plain listener on 443" "$?" 0
 echo "-- architecture / runtime detection"
 eq "x86_64" "$(NC_UNAME_M=x86_64 detect_arch)" x86_64
 eq "amd64 alias" "$(NC_UNAME_M=amd64 detect_arch)" x86_64

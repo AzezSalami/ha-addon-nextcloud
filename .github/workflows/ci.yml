@@ -70,5 +70,8 @@ jobs:
           docker run --rm --entrypoint sh ncaddon:supervisor -c '. /etc/os-release; echo "$PRETTY_NAME"; [ "$ID" = debian ] && ldd --version 2>&1 | head -n1 | grep -i glibc'
       - name: Unit tests inside the image
         run: docker run --rm -v "$PWD/nextcloud":/src --entrypoint bash ncaddon:test /src/tests/unit/run.sh
+      - name: Web interface test (HTTP/HTTPS, LAN vs public URL, bad certificates)
+        if: matrix.db == 'mariadb'
+        run: bash nextcloud/tests/integration/ssl.sh ncaddon:test
       - name: Integration tests (real ${{ matrix.db }}, real CODE)
         run: NC_TEST_DB=${{ matrix.db }} bash nextcloud/tests/integration/run.sh ncaddon:test

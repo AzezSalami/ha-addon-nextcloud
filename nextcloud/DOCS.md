@@ -14,9 +14,12 @@ Existing install? Do **not** start with admin credentials; follow [../docs/MIGRA
 
 | Option | Default | Meaning |
 |---|---|---|
-| `public_url` | empty | `https://cloud.example.com` (no path). Drives trusted domain, `overwritehost`, `overwriteprotocol`, `overwrite.cli.url`. |
+| `public_url` | empty | Your public address, `https://cloud.example.com` (no path). Added to the trusted domains and used for links in cron jobs and notifications. Web requests keep the address they arrive on (see *HTTPS and local access*). |
 | `internal_url` | empty | Optional callback URL for CODE → Nextcloud (`richdocuments wopi_callback_url`). Leave empty unless diagnostics demand it. |
 | `trusted_domains` | `[]` | Additional hostnames (`public_url` host is automatic; `localhost` if both empty). Managed by the add-on: manual entries are replaced at start. |
+| `force_public_url` | `false` | Pin every link and redirect to `public_url`, even for visitors using the LAN address. Only needed if your proxy does not forward the original `Host` and `X-Forwarded-Proto` headers. |
+| `ssl` | `false` | Serve the web interface over HTTPS with a certificate from Home Assistant's `/ssl` folder. |
+| `certfile`, `keyfile` | `fullchain.pem`, `privkey.pem` | File names inside `/ssl` (no directories). Used only when `ssl` is `true`. |
 | `trusted_proxies` | `172.30.32.0/23` | IPs/CIDRs allowed to set `X-Forwarded-*`. Never `0.0.0.0/0`. |
 | `db_type` | `mariadb` | `mariadb` or `postgresql`. PostgreSQL requires `db_mode: external`. |
 | `db_mode` | `supervisor` | `supervisor` = MariaDB add-on via Supervisor service discovery (database is created if missing). `external` = `db_host/db_port/db_user/db_password`. |
@@ -92,3 +95,26 @@ Only a JSON `{"status":"OK"}` from `proxy.php?status` counts as healthy – neve
 | `Access through untrusted domain` | host not in list | `public_url` / `trusted_domains` |
 | Redirect loop on public URL | scheme mismatch | `public_url` https, tunnel service `http://...:80`, `trusted_proxies` |
 | `incompatible_office` | no store release for this NC | wait for release, or [ALTERNATIVE-COLLABORA.md](../docs/ALTERNATIVE-COLLABORA.md) |
+
+## HTTPS and local access
+
+The add-on listens on two container ports:
+
+| Container port | Serves | Published by default |
+|---|---|---|
+| `443/tcp` | the web interface: **HTTPS when `ssl` is on, plain HTTP when it is off** | host port `8099` (the **Open Web UI** button uses it) |
+| `80/tcp` | always plain HTTP, for a tunnel or reverse proxy on the internal network | not published |
+
+**Enable HTTPS:** set `ssl: true` and make sure `certfile` / `keyfile` name files that exist in Home Assistant's `/ssl` folder (for example from the
+Let's Encrypt or DuckDNS add-on). The add-on checks the certificate before starting: it must be a valid PEM file, the key must be unencrypted and belong
+to it, and it must not be expired (a warning appears 14 days before expiry). If anything is wrong the add-on stops with a clear message instead of starting without TLS.
+A certificate is valid only for its own host names, so opening `https://192.168.1.50:8099` by IP shows a browser warning; use the host name on the certificate
+(a local DNS entry pointing to your Home Assistant works) or accept the warning for local use.
+
+**Local access without the internet:** web requests keep the address they arrive on, so `http(s)://<ip>:8099` stays on that IP and nothing leaves your network.
+Add the address you type to `trusted_domains` **with its port**, for example `192.168.1.50:8099` or `homeassistant.local:8099`; otherwise Nextcloud answers
+"Access through untrusted domain". Through a Cloudflare Tunnel the request carries `X-Forwarded-Proto: https`, which Nextcloud honours because the tunnel's address is in
+`trusted_proxies` (the default `172.30.32.0/23` covers a tunnel running as a Home Assistant add-on; add the machine's IP if `cloudflared` runs elsewhere).
+
+If visitors through your proxy get `http://` links or redirect loops, the proxy is not forwarding the headers: fix `trusted_proxies`, or turn on `force_public_url`
+(this pins all links to `public_url`, so opening the add-on by IP then redirects to the public address).

@@ -70,3 +70,10 @@ the database by dropping only the tables and sequences owned by the connecting r
 Result: **10 passed, 0 failed** – the upgrade was detected, a verified `pre-upgrade-35.0.1` backup was created automatically, Nextcloud reported
 35.0.2 with no pending upgrade or maintenance mode, and the user and a test file were preserved. Run on MariaDB only (the logic is engine-independent).
 The full suite above was re-run on the 35.0.2 image for both MariaDB and PostgreSQL with 0 failures.
+
+### Web interface test (2026-10-16): `tests/integration/ssl.sh`
+
+15 checks, 0 failed (MariaDB, self-signed certificate): plain HTTP on container port 443 with `ssl: false`; HTTPS with a verifying certificate and no plain HTTP on that
+port with `ssl: true`; port 80 stays plain HTTP; a LAN visitor keeps its own address (`http(s)://192.168.1.50:8099/...`) instead of being redirected to `public_url`;
+a visitor arriving from a trusted proxy with `X-Forwarded-Proto: https` gets `https://<public_url>`; `force_public_url: true` pins links to `public_url`; a key that does not
+match the certificate, or a missing certificate file, stops the add-on with a clear message. The full MariaDB suite was re-run afterwards: 23/23. Unit tests: 108/108.

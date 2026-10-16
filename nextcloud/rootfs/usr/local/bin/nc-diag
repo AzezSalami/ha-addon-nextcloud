@@ -136,14 +136,10 @@ if [ -n "$PUBLIC_URL" ]; then
             ok) jq -e '.installed == true' "$TMP/b" >/dev/null 2>&1 || finding ERROR proxy_misconfig "Public URL answers 200 but not with Nextcloud status JSON" "A different service or an error page is served at $PUBLIC_URL; check the tunnel's service URL." ;;
             cloudflare_access) finding ERROR cloudflare_access "Cloudflare Access challenge on $PUBLIC_URL/status.php" "Add a bypass policy for the server's egress/service token for /status.php and /apps/richdocumentscode/*; or call Nextcloud via internal_url. Access is not bypassed automatically." ;;
             cloudflare_block) finding ERROR cloudflare_block "Cloudflare WAF/bot rule blocks the request" "Review Cloudflare security events." ;;
-            proxy_redirect) finding ERROR proxy_misconfig "Redirect from $PUBLIC_URL/status.php: $(grep -i '^location:' "$TMP/h" | head -n1 | tr -d '\r')" "Redirect loop/scheme mismatch: check overwriteprotocol, trusted_proxies and the tunnel service URL (http://<addon>:80)." ;;
+            proxy_redirect) finding ERROR proxy_misconfig "Redirect from $PUBLIC_URL/status.php: $(grep -i '^location:' "$TMP/h" | head -n1 | tr -d '\r')" "Redirect loop/scheme mismatch: check trusted_proxies (must include the tunnel/proxy address so X-Forwarded-Proto is honoured), the tunnel service URL (http://<addon>:80), or set force_public_url." ;;
             bad_gateway) finding ERROR proxy_misconfig "Gateway error $code" "Tunnel cannot reach the add-on: check the tunnel's service URL/port." ;;
             *) finding ERROR proxy_misconfig "Unexpected $hc" "" ;;
         esac
-    fi
-    # Reverse-proxy header handling: loopback request carrying forwarded headers.
-    if nc_installed && [ "$(occ config:system:get overwriteprotocol 2>/dev/null)" != "$(url_scheme "$PUBLIC_URL")" ]; then
-        finding WARN overwriteprotocol "overwriteprotocol does not match public_url scheme" "Set public_url in the add-on options and restart."
     fi
 fi
 

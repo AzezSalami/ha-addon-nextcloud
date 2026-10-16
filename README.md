@@ -40,7 +40,7 @@ document server.
    * `public_url`: the address you will use, e.g. `https://cloud.example.com`
    * `admin_user` and `admin_password`: needed only for the very first start (minimum 10 characters)
 5. Start the add-on and watch the **Log** tab. The first start installs Nextcloud, then Nextcloud Office.
-6. Make it reachable (see [Cloudflare Tunnel](docs/CLOUDFLARE.md) or use the add-on's HTTP port, `8099` by default under Configuration → Network, behind your own reverse proxy; local test: `http://<HA-IP>:8099` after adding that address to `trusted_domains`).
+6. Make it reachable: through a [Cloudflare Tunnel](docs/CLOUDFLARE.md) (target the add-on's plain HTTP port), or locally with the **Open Web UI** button (host port `8099`, HTTPS if you turn on `ssl` and point `certfile`/`keyfile` at certificates in Home Assistant's `/ssl` folder). Add the address you use, with its port, to `trusted_domains` (for example `192.168.1.50:8099`).
 7. Check everything with the diagnostics report:
    ```bash
    docker exec addon_<repository-hash>_nextcloud_official nc-diag
@@ -62,6 +62,8 @@ copies your data and database into the new add-on and leaves the old one untouch
 | `public_url` | Your public address. Sets trusted domains and HTTPS handling. |
 | `trusted_domains` | Extra hostnames (for example a local name). |
 | `trusted_proxies` | Addresses of your reverse proxy / tunnel that may set forwarded headers. |
+| `ssl`, `certfile`, `keyfile` | HTTPS for the web interface using certificates from Home Assistant's `/ssl` folder. |
+| `force_public_url` | Pin all links to `public_url` (off by default, so local access by IP stays local). |
 | `db_type`, `db_mode`, `db_*` | MariaDB add-on (default), or an external MariaDB/PostgreSQL server (see [PostgreSQL setup](nextcloud/DOCS.md#using-postgresql)). |
 | `data_path` | Where user files are stored. Use `/share/...` for a large disk. |
 | `enable_office` | Install and enable Nextcloud Office with the built-in server. |

@@ -10,7 +10,8 @@ Browser ──HTTPS──> Cloudflare ──tunnel──> cloudflared ──HTTP
                                                                    │ built-in CODE (127.0.0.1:9983, via proxy.php)
 ```
 
-* The add-on publishes plain HTTP on host port `8099` by default (Configuration → Network; the "Open Web UI" button uses it). If `cloudflared` runs as a Home Assistant add-on you can clear that port (leave it empty) so nothing is reachable on the LAN except through the tunnel. Target
+* Local access by IP stays local; see *HTTPS and local access* in [DOCS.md](../nextcloud/DOCS.md#https-and-local-access).
+* The web interface is published on host port `8099` by default (container port 443: HTTPS if `ssl` is on, else plain HTTP; the "Open Web UI" button uses it). The tunnel itself should target the add-on's plain HTTP port 80 on the internal network, which needs no published port. Clear the host port (Configuration → Network) if you want nothing reachable on the LAN except through the tunnel. Target
   `http://<repo-hash>-nextcloud-official:80` (shown as the add-on hostname on its Info page, with `_` replaced by `-`).
   If `cloudflared` runs elsewhere, keep the port enabled and use it only on a trusted LAN; never port-forward it on your router.
 * TLS terminates at Cloudflare. The tunnel→add-on hop is plain HTTP on the internal Supervisor network.
@@ -19,7 +20,7 @@ Browser ──HTTPS──> Cloudflare ──tunnel──> cloudflared ──HTTP
 
 | Option | Value | Why |
 |---|---|---|
-| `public_url` | `https://cloud.example.com` | Sets trusted domain, `overwritehost`, `overwriteprotocol=https`, `overwrite.cli.url` |
+| `public_url` | `https://cloud.example.com` | Adds the trusted domain and sets the CLI URL. Web links follow the request (`Host`, `X-Forwarded-Proto`), so LAN access keeps working. |
 | `trusted_domains` | extra names only (e.g. LAN name) | The `public_url` host is added automatically |
 | `trusted_proxies` | `172.30.32.0/23` (default: HA add-on network) plus the cloudflared source if it is elsewhere | Makes Nextcloud trust `X-Forwarded-*` / client IP **only from those hops**. Never use `0.0.0.0/0`. |
 | `internal_url` | usually empty | See below |

@@ -33,6 +33,18 @@ validate_options() {
         [[ "$v" =~ $_re_ipcidr ]] || _err "trusted_proxies entry must be an IP or CIDR: '$v'"
     done < <(jq -r '.trusted_proxies // [] | .[]' "$f")
 
+    for k in certfile keyfile; do
+        v="$(_get "$k")"
+        if [ -n "$v" ] && ! [[ "$v" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            _err "$k must be a plain file name inside Home Assistant's /ssl folder (no directories): '$v'"
+        fi
+    done
+    if [ "$(_get ssl)" = true ]; then
+        for k in certfile keyfile; do
+            [ -n "$(_get "$k")" ] || _err "ssl=true requires $k"
+        done
+    fi
+
     case "$(_get db_type)" in
         ""|mariadb) ;;
         postgresql)

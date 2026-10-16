@@ -1,5 +1,14 @@
 # Changelog
 
+## 35.0.2-3
+* HTTPS option: `ssl`, `certfile`, `keyfile` (certificates from Home Assistant's `/ssl`). Container port 443 is the web interface (HTTPS when `ssl` is on, plain HTTP otherwise) and is published on host port 8099 by default; port 80 is plain HTTP and no longer published by default. The certificate is validated before start.
+* The "Open Web UI" button follows `ssl` (`[PROTO:ssl]`).
+* `public_url` no longer forces host/https for every request, so opening the add-on by LAN IP stays on that IP. Behind a tunnel, Nextcloud takes the scheme from `X-Forwarded-Proto` (the proxy must be in `trusted_proxies`). The old behaviour is available as `force_public_url: true`.
+* Removed `overwrite_from_regex` (introduced in 35.0.2-2), replaced by the simpler `force_public_url`.
+
+## 35.0.2-2
+* New option `overwrite_from_regex`: apply the forced public host/https only to requests whose connecting address matches (the tunnel or proxy), so the "Open Web UI" button and LAN access by IP no longer redirect to `public_url`. Empty (default) keeps the old behaviour.
+
 ## 35.0.2-1
 * Update to Nextcloud 35.0.2 (official `nextcloud:35.0.2-apache`). Existing installs upgrade automatically after a verified backup.
 

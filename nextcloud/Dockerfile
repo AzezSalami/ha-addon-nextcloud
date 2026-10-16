@@ -18,7 +18,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        ca-certificates curl jq fontconfig iproute2 procps util-linux \
+        ca-certificates openssl curl jq fontconfig iproute2 procps util-linux \
         mariadb-client postgresql-client rsync gzip tar coreutils libcap2-bin; \
     rm -rf /var/lib/apt/lists/*; \
     # fail the build if the base is not glibc

@@ -1,5 +1,5 @@
 name: Nextcloud
-version: "35.0.2-1"
+version: "35.0.2-3"
 slug: nextcloud_official
 description: Nextcloud on the official Debian (glibc) image with Nextcloud Office and the built-in CODE server.
 url: https://github.com/AzezSalami/ha-addon-nextcloud
@@ -15,17 +15,24 @@ map:
   - addon_config:rw
   - share:rw
   - backup:rw
+  - ssl:ro
 ports:
-  80/tcp: 8099
-webui: "http://[HOST]:[PORT:80]"
+  80/tcp: null
+  443/tcp: 8099
+webui: "[PROTO:ssl]://[HOST]:[PORT:443]"
 ports_description:
-  80/tcp: "Web interface (plain HTTP; TLS is done by Cloudflare or your reverse proxy)"
+  80/tcp: "Plain HTTP (internal use, for example a tunnel or reverse proxy; normally leave empty)"
+  443/tcp: "Web interface (HTTPS when ssl is enabled, otherwise plain HTTP)"
 options:
   public_url: ""
   internal_url: ""
   trusted_domains: []
   trusted_proxies:
     - "172.30.32.0/23"
+  force_public_url: false
+  ssl: false
+  certfile: fullchain.pem
+  keyfile: privkey.pem
   db_type: mariadb
   db_mode: supervisor
   db_host: ""
@@ -53,6 +60,10 @@ schema:
     - str
   trusted_proxies:
     - str
+  force_public_url: bool
+  ssl: bool
+  certfile: match(^[A-Za-z0-9._-]+$)
+  keyfile: match(^[A-Za-z0-9._-]+$)
   db_type: list(mariadb|postgresql)
   db_mode: list(supervisor|external)
   db_host: str?

@@ -6,6 +6,8 @@ set -Eeuo pipefail
 . /usr/local/lib/nc-addon/common.sh
 # shellcheck source=/dev/null
 . /usr/local/lib/nc-addon/validate.sh
+# shellcheck source=/dev/null
+. /usr/local/lib/nc-addon/web.sh
 
 NC_LOG_LEVEL="$(jq -r '.log_level // "info"' "$NC_OPTIONS_FILE" 2>/dev/null || echo info)"
 export NC_LOG_LEVEL
@@ -116,9 +118,32 @@ export NEXTCLOUD_TRUSTED_DOMAINS="${domains[*]}"
 proxies="$(opt trusted_proxies)"
 [ -z "$proxies" ] || export TRUSTED_PROXIES="$proxies"
 if [ -n "$PUBLIC_URL" ]; then
-    OVERWRITEPROTOCOL="$(url_scheme "$PUBLIC_URL")"; OVERWRITEHOST="$(url_host "$PUBLIC_URL")"; OVERWRITECLIURL="$PUBLIC_URL"
-    export OVERWRITEPROTOCOL OVERWRITEHOST OVERWRITECLIURL
+    # The CLI URL (cron, occ, notification links) always follows public_url. The host and scheme of web requests
+    # normally come from the request itself (Host and X-Forwarded-Proto sent by a trusted tunnel/proxy), so the
+    # add-on stays reachable by LAN address. force_public_url pins them to public_url for proxies that do not
+    # forward them correctly, at the price of redirecting local visitors to the public address.
+    OVERWRITECLIURL="$PUBLIC_URL"; export OVERWRITECLIURL
+    if [ "$(opt force_public_url)" = true ]; then
+        OVERWRITEPROTOCOL="$(url_scheme "$PUBLIC_URL")"; OVERWRITEHOST="$(url_host "$PUBLIC_URL")"
+        export OVERWRITEPROTOCOL OVERWRITEHOST
+        log info "force_public_url: links are pinned to $PUBLIC_URL"
+    fi
 fi
+
+# ---- 5b. web interface port: HTTPS (ssl: true) or plain HTTP -------------------------------
+SSL_ENABLED="$(opt ssl)"; SSL_ENABLED="${SSL_ENABLED:-false}"
+SSL_CERT="$NC_SSL_DIR/$(opt certfile)"; SSL_KEY="$NC_SSL_DIR/$(opt keyfile)"
+if [ "$SSL_ENABLED" = true ]; then
+    if ! msgs="$(ssl_check_pair "$SSL_CERT" "$SSL_KEY")"; then
+        printf '%s\n' "$msgs" >&2
+        die "ssl is enabled but the certificate cannot be used. Fix certfile/keyfile (files in Home Assistant's /ssl folder) or set ssl to false."
+    fi
+    [ -z "$msgs" ] || printf '%s\n' "$msgs"
+    log info "HTTPS enabled on the web interface port (container 443), certificate $(opt certfile)"
+else
+    log info "Web interface port (container 443) serves plain HTTP; set ssl to true for HTTPS"
+fi
+web_write_ui_conf "$SSL_ENABLED" "$SSL_CERT" "$SSL_KEY" || die "Could not configure the web interface port (enabling mod_ssl failed)"
 
 # ---- 6. start ------------------------------------------------------------------------------
 child=0; cron_pid=0; post_pid=0; stopping=0
