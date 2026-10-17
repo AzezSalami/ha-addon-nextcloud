@@ -134,6 +134,7 @@ fi
 
 # ---- 5b. web interface port: HTTPS (ssl: true) or plain HTTP -------------------------------
 SSL_ENABLED="$(opt ssl)"; SSL_ENABLED="${SSL_ENABLED:-false}"
+SSL_ALLOW_EXPIRED="$(opt ssl_allow_expired)"; SSL_ALLOW_EXPIRED="${SSL_ALLOW_EXPIRED:-false}"
 SSL_CERT="$NC_SSL_DIR/$(opt certfile)"; SSL_KEY="$NC_SSL_DIR/$(opt keyfile)"
 if [ "$SSL_ENABLED" = true ]; then
     if [ -z "$(opt certfile)" ] && [ -z "$(opt keyfile)" ]; then
@@ -144,8 +145,9 @@ if [ "$SSL_ENABLED" = true ]; then
         [ ! -d /share ] || { mkdir -p /share/nextcloud && cp -f "$SSL_CERT" /share/nextcloud/selfsigned-certificate.crt 2>/dev/null || true; }
         log warning "HTTPS uses a self-signed certificate for: $(ssl_san_string "${domains[@]}"). Browsers show a warning for it; accept it once, or trust /share/nextcloud/selfsigned-certificate.crt on your devices. For a trusted certificate put certfile/keyfile from Home Assistant's /ssl folder in the options."
     fi
-    if ! msgs="$(ssl_check_pair "$SSL_CERT" "$SSL_KEY")"; then
+    if ! msgs="$(ssl_check_pair "$SSL_CERT" "$SSL_KEY" "$SSL_ALLOW_EXPIRED")"; then
         printf '%s\n' "$msgs" >&2
+        case "$msgs" in *"has expired"*) log error "To start with the expired certificate anyway, set ssl_allow_expired to true (browsers and clients will still reject it). Renewing the certificate is the real fix." ;; esac
         die "ssl is enabled but the certificate cannot be used. Fix certfile/keyfile (files in Home Assistant's /ssl folder), clear both for a self-signed certificate, or set ssl to false."
     fi
     [ -z "$msgs" ] || printf '%s\n' "$msgs"

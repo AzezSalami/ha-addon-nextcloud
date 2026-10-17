@@ -84,6 +84,17 @@ Found from a real log: `nc-diag` reported `activate-config FAILED (wopi)` becaus
 from that admin's address, and then disables TLS verification). The add-on now sets `wopi_url` from `public_url`. `tests/integration/run.sh` gained 4 checks (activate-config OK,
 `wopi_url` set, certificate verification left on, no FUSE/fontconfig noise in the log): 27 passed, 0 failed on MariaDB.
 
+### Expired certificates: `ssl_allow_expired` (2026-10-17)
+
+Reproduced from a real log (`SSL ERROR: the certificate has expired` -> `ssl is enabled but the certificate cannot be used`). `ssl_check_pair` takes an `allow_expired`
+argument and `nc-run` passes `ssl_allow_expired` into it. `tests/unit/run.sh` gained 9 checks (expired fixture signed through `openssl ca` with explicit dates, because
+`openssl req -days` refuses a negative value: refused by default with the error text, accepted as `SSL WARNING: the certificate expired on ...` with `allow_expired=true`,
+and a mismatched key or a broken certificate still refused with `allow_expired=true`; plus the `CONFIG WARNING` from `validate_options`). Unit tests: **116 passed, 0 failed**
+on a machine without `php-cli` (the 15 `config.php` rewrite checks need PHP and were not run there); ShellCheck clean on all scripts including `tests/integration/ssl.sh`.
+`tests/integration/ssl.sh` gained 7 checks (29 total): an expired certificate stops the add-on and the log names the option; with `ssl_allow_expired: true` the add-on
+installs and HTTPS answers on that certificate while a verifying client still rejects it, and the log carries the expiry warning. Not verified locally (no Docker on the
+machine used for this change) - the new integration checks run in CI.
+
 ### Self-signed HTTPS for local IP access (2026-10-16)
 
 `ssl: true` with empty `certfile`/`keyfile`: `tests/integration/ssl.sh` now has 22 checks, 0 failed. The generated certificate verifies for the LAN IP and host name listed in
