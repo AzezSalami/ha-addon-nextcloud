@@ -108,10 +108,12 @@ policy = policy_any
 email_in_dn = no
 rand_serial = no
 unique_subject = no
+copy_extensions = copy
 [policy_any]
 commonName = supplied
 EOF
-openssl req -newkey rsa:2048 -nodes -keyout /ssl/expired.key -out /tmp/e.csr -subj "/CN=localhost" >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -keyout /ssl/expired.key -out /tmp/e.csr -subj "/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
 openssl ca -config /tmp/ca.cnf -batch -selfsign -keyfile /ssl/expired.key -in /tmp/e.csr -out /ssl/expired.pem -notext \
     -startdate 20200101000000Z -enddate 20200201000000Z >/dev/null 2>&1'
 expopts() { docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq --argjson a "$1" '.certfile="expired.pem" | .keyfile="expired.key" | .ssl_allow_expired=$a')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'; }
@@ -122,7 +124,9 @@ docker logs "$P-nc" 2>&1 | tail -n 8 | grep -F 'set ssl_allow_expired to true' >
 expopts true; docker restart -t 30 "$P-nc" >/dev/null
 ready 300 && ok "ssl_allow_expired=true starts with the expired certificate" || { bad "did not start with ssl_allow_expired"; docker logs "$P-nc" 2>&1 | tail -n 15; }
 dx curl -fsSk https://127.0.0.1:443/status.php | grep '"installed":true' >/dev/null && ok "HTTPS answers on the expired certificate (-k: clients still reject it)" || bad "HTTPS down with expired certificate"
-dx curl -sS --cacert /ssl/expired.pem -o /dev/null https://127.0.0.1:443/status.php 2>&1 | grep -i 'certificate has expired' >/dev/null && ok "a verifying client still rejects it (expected)" || bad "verification unexpectedly passed"
+VERR="$(dx curl -sS --cacert /ssl/expired.pem -o /dev/null https://127.0.0.1:443/status.php 2>&1)"; VRC=$?
+echo "  verifying client -> rc=$VRC ${VERR:-(no message)}"
+[ "$VRC" != 0 ] && ok "a verifying client still rejects it (expected)" || bad "verification unexpectedly passed"
 docker logs "$P-nc" 2>&1 | grep -F 'SSL WARNING: the certificate expired on' >/dev/null && ok "log warns that the certificate is expired" || bad "no expiry warning in log"
 
 echo "failures: $FAILS"

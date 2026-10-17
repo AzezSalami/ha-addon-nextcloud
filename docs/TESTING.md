@@ -92,8 +92,10 @@ argument and `nc-run` passes `ssl_allow_expired` into it. `tests/unit/run.sh` ga
 and a mismatched key or a broken certificate still refused with `allow_expired=true`; plus the `CONFIG WARNING` from `validate_options`). Unit tests: **116 passed, 0 failed**
 on a machine without `php-cli` (the 15 `config.php` rewrite checks need PHP and were not run there); ShellCheck clean on all scripts including `tests/integration/ssl.sh`.
 `tests/integration/ssl.sh` gained 7 checks (29 total): an expired certificate stops the add-on and the log names the option; with `ssl_allow_expired: true` the add-on
-installs and HTTPS answers on that certificate while a verifying client still rejects it, and the log carries the expiry warning. Not verified locally (no Docker on the
-machine used for this change) - the new integration checks run in CI.
+installs and HTTPS answers on that certificate while a verifying client still rejects it, and the log carries the expiry warning. First CI run: **28 of 29 passed**, and the
+one failure was the new check itself, not the add-on - it matched a single wording of curl's error text, and the expired fixture had no `subjectAltName`, so a verifying
+client failed on the host name instead of the expiry. The check now asserts that verification fails (non-zero curl exit, message printed for the log) and the fixture
+carries the same SAN as the other test certificates (`openssl ca` needs `copy_extensions = copy` to keep it). The behaviour under test passed unchanged.
 
 ### Self-signed HTTPS for local IP access (2026-10-16)
 
