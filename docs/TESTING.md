@@ -89,3 +89,9 @@ from that admin's address, and then disables TLS verification). The add-on now s
 `ssl: true` with empty `certfile`/`keyfile`: `tests/integration/ssl.sh` now has 22 checks, 0 failed. The generated certificate verifies for the LAN IP and host name listed in
 `trusted_domains` (checked with `openssl s_client -verify_ip` / `-verify_hostname`; a different IP is rejected), the key is stored with mode 600, the certificate is kept across
 restarts and regenerated when `trusted_domains` changes. Unit tests: 122/122, ShellCheck clean. Not verified: how each browser presents the self-signed warning.
+
+### Expired certificate (2026-10-19): `ssl_allow_expired`
+
+`tests/integration/ssl.sh`: 27 checks, 0 failed. A certificate that really expired (created with `-not_before/-not_after`) is refused by default with a message naming the option; with
+`ssl_allow_expired: true` the add-on starts, serves HTTPS, logs a loud warning each start, and clients still see `certificate has expired`. Unit tests: 130/130 in the image. The expiry unit
+tests need OpenSSL 3.4+ to back-date a certificate, so they are skipped on older hosts (Ubuntu 24.04 runs 123 checks and skips these; CI also runs the full set inside the image).

@@ -92,7 +92,7 @@ docker logs "$P-nc" 2>&1 | tail -n 8 | grep 'has expired' >/dev/null && ok "expi
 setopts_ex true; docker restart -t 30 "$P-nc" >/dev/null; ready 300 || { bad "start with ssl_allow_expired"; docker logs "$P-nc" 2>&1 | tail -n 12; }
 dx curl -fsSk https://127.0.0.1:443/status.php | grep '"installed":true' >/dev/null && ok "ssl_allow_expired: starts and serves HTTPS" || bad "no HTTPS with ssl_allow_expired"
 docker logs "$P-nc" 2>&1 | grep 'certificate has EXPIRED' >/dev/null && ok "loud warning logged for the expired certificate" || bad "no expiry warning logged"
-dx curl -sS -m 10 --cacert /ssl/expired.pem -o /dev/null https://127.0.0.1:443/ 2>&1 | grep -i 'expired' >/dev/null && ok "clients still see the certificate as expired (nothing is hidden)" || bad "client did not see expiry"
+dx bash -c "openssl s_client -connect 127.0.0.1:443 -CAfile /ssl/expired.pem </dev/null 2>&1" | grep 'certificate has expired' >/dev/null && ok "clients still see the certificate as expired (nothing is hidden)" || bad "client did not see expiry"
 
 echo "### bad certificates are refused with a clear message"
 docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq '.keyfile="other.key"')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'

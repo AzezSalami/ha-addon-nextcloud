@@ -90,6 +90,8 @@ out="$(ssl_check_pair "$T/c3.pem" "$T/k3.pem")"; rcx=$?
 eq "expiring-soon cert still accepted" "$rcx" 0
 case "$out" in *"expires within 14 days"*) eq "expiry warning printed" ok ok ;; *) eq "expiry warning printed" bad ok ;; esac
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$T/kx.pem" -out "$T/cx.pem" -subj "/CN=expired.local" -not_before 20240101000000Z -not_after 20240201000000Z >/dev/null 2>&1
+# OpenSSL < 3.4 cannot back-date a certificate (-not_before/-not_after); skip the expiry tests there. The image (OpenSSL 3.5) runs them.
+if [ -s "$T/cx.pem" ] && ! openssl x509 -in "$T/cx.pem" -noout -checkend 0 >/dev/null 2>&1; then
 out="$(ssl_check_pair "$T/cx.pem" "$T/kx.pem")"; r=$?
 eq "expired certificate rejected by default" "$r" 1
 case "$out" in *"ssl_allow_expired"*) eq "error names the ssl_allow_expired option" ok ok ;; *) eq "error names the ssl_allow_expired option" bad ok ;; esac
@@ -102,6 +104,9 @@ ssl_check_pair "$T/bad.pem" "$T/kx.pem" true >/dev/null; r=$?
 eq "allow_expired does NOT excuse an invalid certificate" "$r" 1
 ssl_check_pair "$T/nope.pem" "$T/kx.pem" true >/dev/null; r=$?
 eq "allow_expired does NOT excuse a missing file" "$r" 1
+else
+    echo "SKIP: this OpenSSL cannot create an expired test certificate; expiry checks are covered inside the image"
+fi
 ssl_check_pair "$T/c.pem" "$T/k.pem" false >/dev/null; r=$?
 eq "valid certificate unaffected by the option" "$r" 0
 export NC_APACHE_UI_CONF="$T/ui.conf" NC_WEBROOT=/data/nextcloud/html
