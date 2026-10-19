@@ -50,7 +50,8 @@ echo "### public_url empty, ssl=false: first trusted domain (ncoffice:443, a nam
 setopts false
 docker run -d --name "$P-nc" --network "$P-net" --network-alias ncoffice -v "$P-data":/data "$IMG" >/dev/null
 wait_log 'file-type list refreshed' 600 && ok "Office configured and refreshed at start" || { bad "Office setup did not finish"; docker logs "$P-nc" 2>&1 | tail -n 25; exit 1; }
-EXPECT="http://ncoffice:443/custom_apps/richdocumentscode/proxy.php?req="
+APP="richdocumentscode"; [ "$(dx uname -m)" = aarch64 ] && APP="richdocumentscode_arm64"   # the CODE app depends on the CPU
+EXPECT="http://ncoffice:443/custom_apps/$APP/proxy.php?req="
 [ "$(occ config:app:get richdocuments wopi_url)" = "$EXPECT" ] && ok "wopi_url derived from trusted_domains" || bad "wopi_url is '$(occ config:app:get richdocuments wopi_url)'"
 logs_have 'public_url is empty' && bad "old 'admin must open Files' hint still shown" || ok "no 'admin must open Files first' hint"
 dx bash -c 'printf "%s" "'"$PASS_USER"'" > /tmp/pw && OC_PASS="$(cat /tmp/pw)" runuser -u www-data -- php /data/nextcloud/html/occ user:add --password-from-env --display-name=Normal normaluser' >/dev/null 2>&1
@@ -63,7 +64,7 @@ dx nc-diag 2>&1 | grep -F 'activate-config      : OK' >/dev/null && ok "nc-diag:
 echo "### public_url empty, ssl=true (self-signed): Nextcloud trusts the certificate, verification stays on"
 setopts true; docker restart -t 30 "$P-nc" >/dev/null
 sleep 20; wait_log 'self-signed certificate is trusted by Nextcloud' 300 && ok "self-signed certificate imported into Nextcloud's trust store" || { bad "certificate not imported"; docker logs "$P-nc" 2>&1 | tail -n 15; }
-EXPECT="https://ncoffice:443/custom_apps/richdocumentscode/proxy.php?req="
+EXPECT="https://ncoffice:443/custom_apps/$APP/proxy.php?req="
 for _ in $(seq 1 30); do [ "$(occ config:app:get richdocuments wopi_url)" = "$EXPECT" ] && break; sleep 5; done
 [ "$(occ config:app:get richdocuments wopi_url)" = "$EXPECT" ] && ok "wopi_url switched to https with the same address" || bad "wopi_url is '$(occ config:app:get richdocuments wopi_url)'"
 occ security:certificates | grep nextcloud-addon-selfsigned >/dev/null && ok "certificate listed in occ security:certificates" || bad "certificate not listed"
