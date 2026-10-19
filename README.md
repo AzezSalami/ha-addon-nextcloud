@@ -62,8 +62,7 @@ copies your data and database into the new add-on and leaves the old one untouch
 | `public_url` | Your public address. Sets trusted domains and HTTPS handling. |
 | `trusted_domains` | Extra hostnames (for example a local name). |
 | `trusted_proxies` | Addresses of your reverse proxy / tunnel that may set forwarded headers. |
-| `ssl`, `certfile`, `keyfile` | HTTPS for the web interface. Leave the file names empty for an automatic self-signed certificate that covers the addresses in `trusted_domains` (works for `https://<ip>:<port>`, browser warns once), or name certificate files from Home Assistant's `/ssl` folder. |
-| `ssl_allow_expired` | Start with an expired certificate instead of stopping (the expiry becomes a warning). A stop-gap while renewing: browsers and the Nextcloud clients still reject it. |
+| `ssl`, `certfile`, `keyfile`, `ssl_allow_expired` | HTTPS for the web interface. Leave the file names empty for an automatic self-signed certificate that covers the addresses in `trusted_domains` (works for `https://<ip>:<port>`, browser warns once), or name certificate files from Home Assistant's `/ssl` folder. `ssl_allow_expired` lets the add-on start even if that certificate has expired (off by default). |
 | `force_public_url` | Pin all links to `public_url` (off by default, so local access by IP stays local). |
 | `db_type`, `db_mode`, `db_*` | MariaDB add-on (default), or an external MariaDB/PostgreSQL server (see [PostgreSQL setup](nextcloud/DOCS.md#using-postgresql)). |
 | `data_path` | Where user files are stored. Use `/share/...` for a large disk. |

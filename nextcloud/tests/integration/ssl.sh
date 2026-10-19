@@ -25,7 +25,7 @@ ready() { local i=0; while [ "$i" -lt "$1" ]; do
 opts() { # opts <ssl true|false> <force_public_url true|false>
     jq -n --arg ap "$PASS_ADMIN" --arg dp "$PASS_DB" --argjson ssl "$1" --argjson force "$2" '{
       public_url:"https://gg.example.test", internal_url:"", trusted_domains:["192.168.1.50:8099","localhost"],
-      trusted_proxies:["172.16.0.0/12"], force_public_url:$force, ssl:$ssl, certfile:"fullchain.pem", keyfile:"privkey.pem", ssl_allow_expired:false,
+      trusted_proxies:["172.16.0.0/12"], force_public_url:$force, ssl:$ssl, certfile:"fullchain.pem", keyfile:"privkey.pem",
       db_type:"mariadb", db_mode:"external", db_host:"db", db_port:0, db_name:"nextcloud", db_user:"nc", db_password:$dp,
       admin_user:"admin", admin_password:$ap, data_path:"/data/nextcloud-data", background_jobs:"cron", php_memory_limit:"512M",
       upload_limit:"1G", default_phone_region:"", enable_office:false, code_diagnostics:false, code_start_timeout:120,
@@ -83,6 +83,17 @@ docker restart -t 30 "$P-nc" >/dev/null; ready 300; SUM2="$(dx sha256sum $CRT | 
 setopts_ss '["192.168.1.50:8099","10.9.8.7:8099"]'; docker restart -t 30 "$P-nc" >/dev/null; ready 300
 dx openssl x509 -in $CRT -noout -text | grep 'IP Address:10.9.8.7' >/dev/null && ok "certificate is regenerated when trusted_domains changes" || bad "no regeneration"
 
+echo "### expired certificate: refused by default, allowed with ssl_allow_expired"
+docker run --rm -v "$P-ssl":/ssl --entrypoint sh "$IMG" -c 'openssl req -x509 -newkey rsa:2048 -nodes -keyout /ssl/expired.key -out /ssl/expired.pem -subj "/CN=localhost" -not_before 20240101000000Z -not_after 20240201000000Z >/dev/null 2>&1'
+setopts_ex() { docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq --argjson a "$1" '.certfile="expired.pem" | .keyfile="expired.key" | .ssl_allow_expired=$a')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'; }
+setopts_ex false; docker restart -t 30 "$P-nc" >/dev/null; sleep 12
+docker logs "$P-nc" 2>&1 | tail -n 8 | grep 'has expired' >/dev/null && ok "expired certificate refused by default" || bad "expired certificate not reported"
+[ "$(docker inspect -f '{{.State.Running}}' "$P-nc")" = false ] && ok "add-on does not start with an expired certificate by default" || bad "add-on started with expired certificate"
+setopts_ex true; docker restart -t 30 "$P-nc" >/dev/null; ready 300 || { bad "start with ssl_allow_expired"; docker logs "$P-nc" 2>&1 | tail -n 12; }
+dx curl -fsSk https://127.0.0.1:443/status.php | grep '"installed":true' >/dev/null && ok "ssl_allow_expired: starts and serves HTTPS" || bad "no HTTPS with ssl_allow_expired"
+docker logs "$P-nc" 2>&1 | grep 'certificate has EXPIRED' >/dev/null && ok "loud warning logged for the expired certificate" || bad "no expiry warning logged"
+dx curl -sS -m 10 --cacert /ssl/expired.pem -o /dev/null https://127.0.0.1:443/ 2>&1 | grep -i 'expired' >/dev/null && ok "clients still see the certificate as expired (nothing is hidden)" || bad "client did not see expiry"
+
 echo "### bad certificates are refused with a clear message"
 docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq '.keyfile="other.key"')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'
 docker restart -t 30 "$P-nc" >/dev/null; sleep 12
@@ -91,43 +102,6 @@ docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq '.certfile="mi
 docker restart -t 30 "$P-nc" >/dev/null; sleep 12
 docker logs "$P-nc" 2>&1 | tail -n 6 | grep 'not found or not readable' >/dev/null && ok "missing certificate refused" || bad "missing cert not reported"
 [ "$(docker inspect -f '{{.State.Running}}' "$P-nc")" = false ] && ok "add-on stopped instead of starting without TLS" || bad "add-on kept running"
-
-echo "### an expired certificate: refused by default, used with ssl_allow_expired=true"
-docker run --rm -v "$P-ssl":/ssl --entrypoint sh "$IMG" -c '
-mkdir -p /tmp/ca && : >/tmp/ca/index.txt && echo 01 >/tmp/ca/serial
-cat >/tmp/ca.cnf <<EOF
-[ca]
-default_ca = CA_default
-[CA_default]
-dir = /tmp/ca
-database = /tmp/ca/index.txt
-serial = /tmp/ca/serial
-new_certs_dir = /tmp/ca
-default_md = sha256
-policy = policy_any
-email_in_dn = no
-rand_serial = no
-unique_subject = no
-copy_extensions = copy
-[policy_any]
-commonName = supplied
-EOF
-openssl req -newkey rsa:2048 -nodes -keyout /ssl/expired.key -out /tmp/e.csr -subj "/CN=localhost" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
-openssl ca -config /tmp/ca.cnf -batch -selfsign -keyfile /ssl/expired.key -in /tmp/e.csr -out /ssl/expired.pem -notext \
-    -startdate 20200101000000Z -enddate 20200201000000Z >/dev/null 2>&1'
-expopts() { docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq --argjson a "$1" '.certfile="expired.pem" | .keyfile="expired.key" | .ssl_allow_expired=$a')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'; }
-expopts false; docker restart -t 30 "$P-nc" >/dev/null; sleep 12
-docker logs "$P-nc" 2>&1 | tail -n 8 | grep -F 'the certificate has expired' >/dev/null && ok "expired certificate refused by default" || bad "expired certificate not reported"
-docker logs "$P-nc" 2>&1 | tail -n 8 | grep -F 'set ssl_allow_expired to true' >/dev/null && ok "log points at ssl_allow_expired" || bad "no hint about ssl_allow_expired"
-[ "$(docker inspect -f '{{.State.Running}}' "$P-nc")" = false ] && ok "add-on stopped on the expired certificate" || bad "add-on kept running with an expired certificate"
-expopts true; docker restart -t 30 "$P-nc" >/dev/null
-ready 300 && ok "ssl_allow_expired=true starts with the expired certificate" || { bad "did not start with ssl_allow_expired"; docker logs "$P-nc" 2>&1 | tail -n 15; }
-dx curl -fsSk https://127.0.0.1:443/status.php | grep '"installed":true' >/dev/null && ok "HTTPS answers on the expired certificate (-k: clients still reject it)" || bad "HTTPS down with expired certificate"
-VERR="$(dx curl -sS --cacert /ssl/expired.pem -o /dev/null https://127.0.0.1:443/status.php 2>&1)"; VRC=$?
-echo "  verifying client -> rc=$VRC ${VERR:-(no message)}"
-[ "$VRC" != 0 ] && ok "a verifying client still rejects it (expected)" || bad "verification unexpectedly passed"
-docker logs "$P-nc" 2>&1 | grep -F 'SSL WARNING: the certificate expired on' >/dev/null && ok "log warns that the certificate is expired" || bad "no expiry warning in log"
 
 echo "failures: $FAILS"
 [ "$FAILS" = 0 ]

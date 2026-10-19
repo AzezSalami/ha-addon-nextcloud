@@ -44,9 +44,6 @@ validate_options() {
     if [ "$(_get ssl)" = true ]; then
         if [ -n "$(_get certfile)" ] && [ -z "$(_get keyfile)" ]; then _err "certfile is set but keyfile is empty (set both, or clear both for a self-signed certificate)"; fi
         if [ -z "$(_get certfile)" ] && [ -n "$(_get keyfile)" ]; then _err "keyfile is set but certfile is empty (set both, or clear both for a self-signed certificate)"; fi
-        if [ "$(_get ssl_allow_expired)" = true ]; then
-            echo "CONFIG WARNING: ssl_allow_expired is true: an expired certificate is accepted instead of stopping the add-on. Browsers and the Nextcloud clients still reject it, so renew the certificate and set this back to false"
-        fi
     fi
 
     case "$(_get db_type)" in

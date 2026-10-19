@@ -1,8 +1,7 @@
 # Changelog
 
 ## 35.0.2-6
-* New option `ssl_allow_expired` (default `false`): with `ssl: true` and an expired certificate in `certfile`, the add-on no longer refuses to start. `SSL ERROR: the certificate has expired` becomes `SSL WARNING: the certificate expired on <date>` and Apache serves the certificate as it is. All other certificate checks still stop the add-on, and browsers and the Nextcloud clients still reject an expired certificate, so it is a stop-gap while renewing.
-* When an expired certificate does stop the add-on, the log now names the option that overrides it.
+* New option `ssl_allow_expired` (default off): start with an expired certificate, with a loud warning in the log. Only expiry is excused; missing, invalid or mismatched certificate/key files still stop the add-on.
 
 ## 35.0.2-5
 * `ssl: true` with empty `certfile`/`keyfile` now generates a self-signed certificate covering the addresses in `trusted_domains` (IPs and host names) and `localhost`, so `https://<ip>:<port>` works without certificate files. It is kept across restarts, regenerated when the address list changes or 30 days before expiry, and its public part is copied to `/share/nextcloud/selfsigned-certificate.crt`. `certfile`/`keyfile` now default to empty; naming files in `/ssl` still uses them (and fails clearly if they are unusable).

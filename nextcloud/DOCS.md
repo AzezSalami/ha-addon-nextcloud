@@ -20,7 +20,7 @@ Existing install? Do **not** start with admin credentials; follow [../docs/MIGRA
 | `force_public_url` | `false` | Pin every link and redirect to `public_url`, even for visitors using the LAN address. Only needed if your proxy does not forward the original `Host` and `X-Forwarded-Proto` headers. |
 | `ssl` | `false` | Serve the web interface over HTTPS with a certificate from Home Assistant's `/ssl` folder. |
 | `certfile`, `keyfile` | empty | Certificate and key file names inside Home Assistant's `/ssl` folder (no directories). **Leave both empty** to let the add-on generate a self-signed certificate for the addresses in `trusted_domains`. Used only when `ssl` is `true`. |
-| `ssl_allow_expired` | `false` | Start even though the certificate has expired (the expiry becomes a warning instead of stopping the add-on). Browsers and the Nextcloud clients still reject an expired certificate, so this only buys time while you renew it. |
+| `ssl_allow_expired` | `false` | Start even if the configured certificate has expired. The log then carries a loud warning on every start and browsers will warn or refuse the connection until you renew it. Only expiry is excused: a missing, invalid or mismatched certificate and key still stop the add-on. |
 | `trusted_proxies` | `172.30.32.0/23` | IPs/CIDRs allowed to set `X-Forwarded-*`. Never `0.0.0.0/0`. |
 | `db_type` | `mariadb` | `mariadb` or `postgresql`. PostgreSQL requires `db_mode: external`. |
 | `db_mode` | `supervisor` | `supervisor` = MariaDB add-on via Supervisor service discovery (database is created if missing). `external` = `db_host/db_port/db_user/db_password`. |
@@ -114,14 +114,7 @@ into the trusted certificate store of your devices. The private key never leaves
 
 **Enable HTTPS with a real certificate:** set `ssl: true` and put the file names in `certfile` / `keyfile` (files in Home Assistant's `/ssl` folder, for example from the Let's Encrypt or DuckDNS add-on).
 The add-on checks the certificate before starting: it must be a valid PEM file, the key must be unencrypted and belong to it, and it must not be expired (a warning appears 14 days before expiry).
-If anything is wrong the add-on stops with a clear message instead of starting without TLS.
-
-**Expired certificate (`SSL ERROR: the certificate has expired`):** the certificate in `/ssl` is past its `notAfter` date. The fix is renewing it (the Let's Encrypt or DuckDNS add-on does this
-automatically; check that it is running and that `certfile`/`keyfile` point at the files it writes). If you need the add-on back up before you can renew, set `ssl_allow_expired: true`: the expiry
-is then logged as `SSL WARNING: the certificate expired on ...` and Apache serves the certificate unchanged. Every other check still applies, so a broken or mismatched key still stops the add-on.
-Be aware of what this does **not** fix: browsers refuse the connection with `NET::ERR_CERT_DATE_INVALID` until you accept an exception per device, the Nextcloud desktop and mobile clients refuse
-to sync, and `nc-diag` reports `tls_failure` if `public_url` points at this certificate. Two alternatives are often better for local use: clear `certfile`/`keyfile` for the add-on's own self-signed
-certificate (it renews itself), or set `ssl: false` and let a reverse proxy or Cloudflare Tunnel terminate TLS. A real certificate is valid only for its own host names, so opening it by IP shows a browser warning;
+If anything is wrong the add-on stops with a clear message instead of starting without TLS (an *expired* certificate can be allowed with `ssl_allow_expired`, see the table above). A real certificate is valid only for its own host names, so opening it by IP shows a browser warning;
 use the host name on the certificate (a local DNS entry pointing to your Home Assistant works), or use the self-signed option above for IP access.
 
 **Local access without the internet:** web requests keep the address they arrive on, so `http(s)://<ip>:8099` stays on that IP and nothing leaves your network.

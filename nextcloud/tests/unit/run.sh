@@ -51,10 +51,6 @@ mk '.ssl=true|.certfile="fullchain.pem"|.keyfile="privkey.pem"'; rc "ssl with de
 mk '.ssl=true|.certfile=""|.keyfile=""';             rc "ssl with both files empty = self-signed ok" 0 validate_options "$T/o.json"
 mk '.ssl=true|.certfile="a.pem"|.keyfile=""';        rc "certfile without keyfile rejected" 1 validate_options "$T/o.json"
 mk '.ssl=true|.certfile=""|.keyfile="k.pem"';        rc "keyfile without certfile rejected" 1 validate_options "$T/o.json"
-mk '.ssl=true|.certfile="c.pem"|.keyfile="k.pem"|.ssl_allow_expired=true'; rc "ssl_allow_expired accepted" 0 validate_options "$T/o.json"
-mk '.ssl=true|.certfile="c.pem"|.keyfile="k.pem"|.ssl_allow_expired=true'
-out="$(validate_options "$T/o.json")"
-case "$out" in *"ssl_allow_expired is true"*) eq "ssl_allow_expired warns" ok ok ;; *) eq "ssl_allow_expired warns" bad ok ;; esac
 mk '.certfile="../etc/passwd"';                      rc "certfile path traversal rejected" 1 validate_options "$T/o.json"
 mk '.keyfile="sub/key.pem"';                         rc "keyfile with directory rejected" 1 validate_options "$T/o.json"
 mk '.ssl=false|.certfile="whatever.pem"';            rc "ssl off ignores file existence" 0 validate_options "$T/o.json"
@@ -93,36 +89,21 @@ ssl_check_pair "$T/cenc.pem" "$T/kenc.pem" >/dev/null;         eq "encrypted key
 out="$(ssl_check_pair "$T/c3.pem" "$T/k3.pem")"; rcx=$?
 eq "expiring-soon cert still accepted" "$rcx" 0
 case "$out" in *"expires within 14 days"*) eq "expiry warning printed" ok ok ;; *) eq "expiry warning printed" bad ok ;; esac
-# an already expired certificate (openssl cannot sign one with -days, so sign it through `openssl ca` with explicit dates)
-mkdir -p "$T/ca"; : >"$T/ca/index.txt"; echo 01 >"$T/ca/serial"
-cat >"$T/ca.cnf" <<EOF
-[ca]
-default_ca = CA_default
-[CA_default]
-dir = $T/ca
-database = $T/ca/index.txt
-serial = $T/ca/serial
-new_certs_dir = $T/ca
-default_md = sha256
-policy = policy_any
-email_in_dn = no
-rand_serial = no
-unique_subject = no
-[policy_any]
-commonName = supplied
-EOF
-openssl req -newkey rsa:2048 -nodes -keyout "$T/k4.pem" -out "$T/c4.csr" -subj "/CN=expired.local" >/dev/null 2>&1
-openssl ca -config "$T/ca.cnf" -batch -selfsign -keyfile "$T/k4.pem" -in "$T/c4.csr" -out "$T/c4.pem" -notext \
-    -startdate 20200101000000Z -enddate 20200201000000Z >/dev/null 2>&1
-r=0; openssl x509 -in "$T/c4.pem" -noout -checkend 0 >/dev/null 2>&1 || r=1; eq "test fixture really is expired" "$r" 1
-out="$(ssl_check_pair "$T/c4.pem" "$T/k4.pem")"; rcx=$?
-eq "expired certificate rejected by default" "$rcx" 1
-case "$out" in *"SSL ERROR: the certificate has expired"*) eq "expiry error printed" ok ok ;; *) eq "expiry error printed" bad ok ;; esac
-out="$(ssl_check_pair "$T/c4.pem" "$T/k4.pem" true)"; rcx=$?
-eq "expired certificate accepted with allow_expired" "$rcx" 0
-case "$out" in *"SSL WARNING: the certificate expired on"*) eq "expiry downgraded to a warning" ok ok ;; *) eq "expiry downgraded to a warning" bad ok ;; esac
-ssl_check_pair "$T/c.pem" "$T/k2.pem" true >/dev/null; eq "allow_expired does not excuse a mismatched key" "$?" 1
-ssl_check_pair "$T/bad.pem" "$T/k.pem" true >/dev/null; eq "allow_expired does not excuse a broken certificate" "$?" 1
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$T/kx.pem" -out "$T/cx.pem" -subj "/CN=expired.local" -not_before 20240101000000Z -not_after 20240201000000Z >/dev/null 2>&1
+out="$(ssl_check_pair "$T/cx.pem" "$T/kx.pem")"; r=$?
+eq "expired certificate rejected by default" "$r" 1
+case "$out" in *"ssl_allow_expired"*) eq "error names the ssl_allow_expired option" ok ok ;; *) eq "error names the ssl_allow_expired option" bad ok ;; esac
+out="$(ssl_check_pair "$T/cx.pem" "$T/kx.pem" true)"; r=$?
+eq "expired certificate accepted with allow_expired" "$r" 0
+case "$out" in *"EXPIRED"*"starting anyway"*) eq "expired + allowed prints a loud warning" ok ok ;; *) eq "expired + allowed prints a loud warning" bad ok ;; esac
+ssl_check_pair "$T/cx.pem" "$T/k2.pem" true >/dev/null; r=$?
+eq "allow_expired does NOT excuse a mismatched key" "$r" 1
+ssl_check_pair "$T/bad.pem" "$T/kx.pem" true >/dev/null; r=$?
+eq "allow_expired does NOT excuse an invalid certificate" "$r" 1
+ssl_check_pair "$T/nope.pem" "$T/kx.pem" true >/dev/null; r=$?
+eq "allow_expired does NOT excuse a missing file" "$r" 1
+ssl_check_pair "$T/c.pem" "$T/k.pem" false >/dev/null; r=$?
+eq "valid certificate unaffected by the option" "$r" 0
 export NC_APACHE_UI_CONF="$T/ui.conf" NC_WEBROOT=/data/nextcloud/html
 web_write_ui_conf false /x/c.pem /x/k.pem
 eq "SAN: ip, port stripped" "$(ssl_san_string 192.168.1.73:8099)" "DNS:localhost,IP:127.0.0.1,IP:192.168.1.73"

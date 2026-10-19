@@ -9,7 +9,7 @@ NC_SSL_DIR="${NC_SSL_DIR:-/ssl}"
 NC_APACHE_UI_CONF="${NC_APACHE_UI_CONF:-/etc/apache2/conf-enabled/addon-ui.conf}"
 
 # ssl_check_pair <cert> <key> [allow_expired]: prints "SSL ERROR: ..." / "SSL WARNING: ..." lines; returns non-zero on any error.
-# allow_expired=true downgrades an expired certificate to a warning: Apache serves it as it is, browsers still reject it.
+# With allow_expired=true an expired certificate is only a warning (everything else stays an error).
 ssl_check_pair() {
     local cert="$1" key="$2" allow_expired="${3:-false}" rc=0 pub_c pub_k
     [ -r "$cert" ] || { echo "SSL ERROR: certificate file not found or not readable: $cert (put it in Home Assistant's /ssl folder)"; rc=1; }
@@ -25,9 +25,9 @@ ssl_check_pair() {
 
     if ! openssl x509 -in "$cert" -noout -checkend 0 >/dev/null 2>&1; then
         if [ "$allow_expired" = true ]; then
-            echo "SSL WARNING: the certificate expired on $(openssl x509 -in "$cert" -noout -enddate 2>/dev/null | cut -d= -f2-) and is used anyway (ssl_allow_expired is true). Browsers and the Nextcloud clients reject expired certificates (NET::ERR_CERT_DATE_INVALID); renew it as soon as you can."
+            echo "SSL WARNING: the certificate has EXPIRED ($(openssl x509 -in "$cert" -noout -enddate 2>/dev/null)); starting anyway because ssl_allow_expired is enabled. Browsers will warn or refuse until it is renewed."
         else
-            echo "SSL ERROR: the certificate has expired"; rc=1
+            echo "SSL ERROR: the certificate has expired (set ssl_allow_expired to start anyway, or renew it)"; rc=1
         fi
     elif ! openssl x509 -in "$cert" -noout -checkend 1209600 >/dev/null 2>&1; then
         echo "SSL WARNING: the certificate expires within 14 days"
