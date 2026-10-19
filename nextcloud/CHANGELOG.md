@@ -1,5 +1,9 @@
 # Changelog
 
+## 35.0.2-7
+* Nextcloud Office's cached discovery/capabilities (the list of supported file types and the "new document" entries) are refreshed after the add-on configures Office, so Word, Excel, PowerPoint and OpenDocument formats are offered right away.
+* `nc-diag` and the refresh keep the callback URL (`internal_url`): `richdocuments:activate-config` resets it, which previously could silently clear it.
+
 ## 35.0.2-6
 * New option `ssl_allow_expired` (default off): start with an expired certificate, with a loud warning in the log. Only expiry is excused; missing, invalid or mismatched certificate/key files still stop the add-on.
 

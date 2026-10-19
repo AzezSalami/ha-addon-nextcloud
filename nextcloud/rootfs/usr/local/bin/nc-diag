@@ -153,7 +153,7 @@ if nc_installed && [ "$class" = ok ]; then
         out=""; orc=skip
     else
         add "wopi_url            : $wopi_cfg"
-        out="$(occ richdocuments:activate-config 2>&1)"; orc=$?
+        office_refresh; orc=$?; out="$OFFICE_REFRESH_OUT"
     fi
     if [ "$orc" = skip ]; then :
     elif [ "$orc" = 0 ]; then add "activate-config      : OK (discovery + capabilities fetched by Nextcloud)"

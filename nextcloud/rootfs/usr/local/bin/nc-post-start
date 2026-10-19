@@ -72,6 +72,23 @@ if [ "$(opt enable_office)" = true ]; then
     else
         log info "public_url is empty: an admin must open the Files app once so Nextcloud Office can configure the built-in server (set public_url to avoid this)"
     fi
+    # Refresh Nextcloud Office's cached discovery and capabilities, so the supported file types (docx, xlsx, pptx, odt, ...)
+    # and the "new document" entries are picked up right after (re)configuration instead of whenever the cache expires.
+    if [ -n "$(occ config:app:get richdocuments wopi_url 2>/dev/null || true)" ]; then
+        host="$(url_host "${PUBLIC_URL:-http://localhost}")"
+        deadline=$((SECONDS + $(opt code_start_timeout)))
+        while :; do
+            res="$(curl -sS --max-time 30 -H "Host: $host" -H 'X-Forwarded-Proto: https' "http://127.0.0.1$(code_proxy_path "$CODE_APP")?status" 2>/dev/null || true)"
+            [ "$(classify_code_status "$res")" = ok ] && break
+            [ "$SECONDS" -lt "$deadline" ] || break
+            sleep 5
+        done
+        if office_refresh; then
+            log info "Nextcloud Office file-type list refreshed"
+        else
+            log warning "Could not refresh Nextcloud Office's file-type list yet: $(printf '%s' "$OFFICE_REFRESH_OUT" | tr '\n' ' ' | head -c 200)"
+        fi
+    fi
 fi
 
 # 4. Diagnostics (read-only; never changes security settings).

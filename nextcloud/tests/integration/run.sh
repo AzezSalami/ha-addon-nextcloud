@@ -95,6 +95,11 @@ WOPI="$(dexec bash -c ". /usr/local/lib/nc-addon/common.sh; occ config:app:get r
 [ "$WOPI" = "http://localhost${PROXY}?req=" ] && ok "wopi_url pre-configured from public_url" || bad "wopi_url is '$WOPI'"
 [ "$(dexec bash -c ". /usr/local/lib/nc-addon/common.sh; occ config:app:get richdocuments disable_certificate_verification" 2>/dev/null)" != yes ] && ok "TLS certificate verification for Office left on" || bad "certificate verification disabled"
 docker logs "$P-nc" 2>&1 | grep -E 'libfuse|No writable cache directories' >/dev/null && bad "noisy FUSE/fontconfig errors in log" || ok "no FUSE/fontconfig error noise in log"
+docker logs "$P-nc" 2>&1 | grep -F 'Nextcloud Office file-type list refreshed' >/dev/null && ok "Office file-type list refreshed at start" || bad "Office cache not refreshed"
+CAPS="$(dexec curl -s -u "admin:$PASS_ADMIN" -H 'OCS-APIRequest: true' 'http://127.0.0.1/ocs/v2.php/cloud/capabilities?format=json')"
+for t in wordprocessingml.document spreadsheetml.sheet presentationml.presentation opendocument.text opendocument.spreadsheet opendocument.presentation; do
+    jq -e --arg t "$t" '.ocs.data.capabilities.richdocuments.mimetypes | map(select(contains($t))) | length > 0' <<<"$CAPS" >/dev/null 2>&1 && ok "Office offers $t" || bad "Office does not offer $t"
+done
 rm -f "$HERE/.diag.txt"
 docker logs "$P-nc" 2>&1 | grep -F "$PASS_ADMIN" >/dev/null && bad "admin password leaked into logs" || ok "no admin password in logs"
 docker logs "$P-nc" 2>&1 | grep -F "$PASS_DB" >/dev/null && bad "db password leaked into logs" || ok "no db password in logs"

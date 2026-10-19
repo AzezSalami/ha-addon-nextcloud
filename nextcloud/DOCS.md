@@ -136,3 +136,15 @@ from `public_url` (`<public_url>/custom_apps/richdocumentscode/proxy.php?req=`),
   certificate verification for the built-in server. The add-on logs a hint when this applies.
 * A custom office server entered in the Nextcloud Office admin settings is never overwritten.
 * `nc-diag` warns "Nextcloud Office has no server address yet" until one of the above has happened, and shows the real error if Nextcloud cannot reach the built-in server.
+
+## Only Markdown opens, no Word/Excel/PowerPoint?
+
+Markdown (`.md`) is opened by Nextcloud's own *Text* app, not by Nextcloud Office, so seeing only Markdown means Nextcloud Office is not offering its file types in your session.
+On a clean install of this add-on Nextcloud Office offers 41 types, including `docx`, `xlsx`, `pptx` and the OpenDocument formats. Check in this order:
+
+1. **Reload the browser** (Ctrl+F5) or log out and in. The list of supported types is loaded when the Files page opens.
+2. **Update to 35.0.2-7 or later and restart.** The add-on then refreshes Office's cached file-type list itself. Look for `Nextcloud Office file-type list refreshed` in the log.
+3. Run `nc-diag`. It must show `wopi_url` set and `activate-config : OK`. If it says Nextcloud Office has no server address yet, set `public_url` and restart.
+4. In Nextcloud → *Administration settings → Nextcloud Office*, make sure **Restrict usage to specific groups** is empty (or contains your user's group) and the built-in server is selected.
+5. Still nothing? Refresh manually from the add-on container: `docker exec addon_<slug> runuser -u www-data -- php /data/nextcloud/html/occ richdocuments:activate-config`.
+6. New files: use *+ New → New document / spreadsheet / presentation*. Existing `.docx`, `.xlsx`, `.pptx` files open by clicking them.

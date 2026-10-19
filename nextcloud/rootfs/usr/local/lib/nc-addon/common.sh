@@ -116,3 +116,15 @@ code_proxy_path() {
     elif [ -d "$NC_WEBROOT/custom_apps/$1" ]; then echo "/custom_apps/$1/proxy.php"
     else echo "/apps/$1/proxy.php"; fi
 }
+
+# office_refresh: refresh Nextcloud Office's cached discovery/capabilities (richdocuments:activate-config).
+# That command also resets the callback URL, so a configured one (the internal_url option) is put back.
+# Output of the command is left in OFFICE_REFRESH_OUT; the return code is the command's.
+# shellcheck disable=SC2034  # OFFICE_REFRESH_OUT is read by the scripts that call this
+office_refresh() {
+    local cb rc
+    cb="$(occ config:app:get richdocuments wopi_callback_url 2>/dev/null || true)"
+    OFFICE_REFRESH_OUT="$(occ richdocuments:activate-config 2>&1)"; rc=$?
+    [ -z "$cb" ] || occ config:app:set richdocuments wopi_callback_url --value="$cb" >/dev/null 2>&1 || true
+    return $rc
+}

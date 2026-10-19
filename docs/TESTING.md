@@ -95,3 +95,9 @@ restarts and regenerated when `trusted_domains` changes. Unit tests: 122/122, Sh
 `tests/integration/ssl.sh`: 27 checks, 0 failed. A certificate that really expired (created with `-not_before/-not_after`) is refused by default with a message naming the option; with
 `ssl_allow_expired: true` the add-on starts, serves HTTPS, logs a loud warning each start, and clients still see `certificate has expired`. Unit tests: 130/130 in the image. The expiry unit
 tests need OpenSSL 3.4+ to back-date a certificate, so they are skipped on older hosts (Ubuntu 24.04 runs 123 checks and skips these; CI also runs the full set inside the image).
+
+### Office file types (2026-10-19)
+
+On a clean install Nextcloud reports 41 Office mimetypes via the OCS capabilities endpoint, including docx, xlsx, pptx and the OpenDocument formats (Markdown is handled by the Text app, not Office).
+`tests/integration/run.sh` now asserts six of these types and that the add-on refreshed Office's file-type cache at start: 34 checks, 0 failed on MariaDB. Found while testing: `richdocuments:activate-config`
+resets the callback URL (`internal_url`); the add-on and `nc-diag` now restore it. Not reproduced: a stale-empty cache on a real instance; that part of the fix is untested against the reported symptom.
