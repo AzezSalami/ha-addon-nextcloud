@@ -73,5 +73,8 @@ jobs:
       - name: Web interface test (HTTP/HTTPS, LAN vs public URL, bad certificates)
         if: matrix.db == 'mariadb'
         run: bash nextcloud/tests/integration/ssl.sh ncaddon:test
+      - name: Nextcloud Office with an empty public_url (non-admin user, self-signed HTTPS)
+        if: matrix.db == 'mariadb'
+        run: bash nextcloud/tests/integration/office.sh ncaddon:test
       - name: Integration tests (real ${{ matrix.db }}, real CODE)
         run: NC_TEST_DB=${{ matrix.db }} bash nextcloud/tests/integration/run.sh ncaddon:test

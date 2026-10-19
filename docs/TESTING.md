@@ -101,3 +101,10 @@ tests need OpenSSL 3.4+ to back-date a certificate, so they are skipped on older
 On a clean install Nextcloud reports 41 Office mimetypes via the OCS capabilities endpoint, including docx, xlsx, pptx and the OpenDocument formats (Markdown is handled by the Text app, not Office).
 `tests/integration/run.sh` now asserts six of these types and that the add-on refreshed Office's file-type cache at start: 34 checks, 0 failed on MariaDB. Found while testing: `richdocuments:activate-config`
 resets the callback URL (`internal_url`); the add-on and `nc-diag` now restore it. Not reproduced: a stale-empty cache on a real instance; that part of the fix is untested against the reported symptom.
+
+### Office with an empty public_url (2026-10-19): `tests/integration/office.sh`
+
+Reproduced "Nextcloud Office (Collabora) is not configured" (empty `public_url` left `wopi_url` empty). With the fix, 11 checks, 0 failed: `wopi_url` is derived from the first trusted domain, a **non-admin** user
+receives a configured Office with docx/xlsx/pptx, `nc-diag` reports `activate-config OK`; with `ssl` + the self-signed certificate the certificate is imported into Nextcloud's trust store, `wopi_url` is https,
+TLS verification for Office stays on and `activate-config` succeeds. A loopback design (server address 127.0.0.1 plus a separate browser address) was tried and rejected: `activate-config` overwrites the public
+address with the discovered one. Not verified: reaching the host's LAN IP and published port from inside the add-on container on a real Home Assistant (the usual Docker behaviour, but untested here).

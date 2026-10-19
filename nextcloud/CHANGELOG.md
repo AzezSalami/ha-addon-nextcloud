@@ -1,5 +1,9 @@
 # Changelog
 
+## 35.0.2-8
+* Fix "Nextcloud Office (Collabora) is not configured" when `public_url` is empty: the built-in server address is now taken from the first LAN address in `trusted_domains` (https when `ssl` is on), so normal users can open documents without an admin visiting Files first.
+* With the add-on's own self-signed certificate, the certificate is imported into Nextcloud's trust store, so Office's server-side requests verify it and TLS verification stays on.
+
 ## 35.0.2-7
 * Nextcloud Office's cached discovery/capabilities (the list of supported file types and the "new document" entries) are refreshed after the add-on configures Office, so Word, Excel, PowerPoint and OpenDocument formats are offered right away.
 * `nc-diag` and the refresh keep the callback URL (`internal_url`): `richdocuments:activate-config` resets it, which previously could silently clear it.

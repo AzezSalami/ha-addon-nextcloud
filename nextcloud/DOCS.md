@@ -127,15 +127,16 @@ If visitors through your proxy get `http://` links or redirect loops, the proxy 
 
 ## Nextcloud Office address
 
-Nextcloud Office must know the address of the built-in server, and browsers load the document editor from that address. The add-on sets it at every start
-from `public_url` (`<public_url>/custom_apps/richdocumentscode/proxy.php?req=`), so documents open the same way whatever address you used to log in. Consequences:
+Nextcloud Office must know the address of the built-in server, and browsers load the document editor from it. The add-on sets it at every start, so documents open for every user from the first click:
 
-* Set `public_url` to the address your users should edit documents through (normally your `https://` domain). Editing from the LAN then goes through that address too, so it needs
-  working DNS for the domain (it does not need to leave your network if your router resolves the domain locally).
-* If `public_url` is empty, Nextcloud Office configures itself later from the address of the first admin who opens the Files app. That upstream auto-setup also turns off TLS
-  certificate verification for the built-in server. The add-on logs a hint when this applies.
+* **`public_url` set** → `<public_url>/custom_apps/richdocumentscode/proxy.php?req=`. Editing from the LAN then also goes through that address, so the domain must resolve at home.
+* **`public_url` empty** → the **first entry of `trusted_domains`** is used (`https://` when `ssl` is on, otherwise `http://`), for example `http://192.168.1.73:8099/...`.
+  Put the address you normally use first in the list. Nextcloud's own server-side requests go to that same address from inside the add-on, so it must be reachable from the add-on (a LAN IP and the published port normally is).
+* With the add-on's **self-signed certificate** the certificate is also imported into Nextcloud's trust store, so these server-side requests verify it. TLS verification is not disabled.
+* If neither is available (`public_url` empty and only `localhost` in `trusted_domains`), Nextcloud Office configures itself later from the address of the first *admin* who opens Files. Normal users then see
+  "Nextcloud Office (Collabora) is not configured" until that happens, and that upstream auto-setup also turns off TLS verification for the built-in server. Avoid it by setting `public_url` or a LAN address in `trusted_domains`.
 * A custom office server entered in the Nextcloud Office admin settings is never overwritten.
-* `nc-diag` warns "Nextcloud Office has no server address yet" until one of the above has happened, and shows the real error if Nextcloud cannot reach the built-in server.
+* `nc-diag` warns "Nextcloud Office has no server address yet" until an address exists, and shows the real error if Nextcloud cannot reach the built-in server.
 
 ## Only Markdown opens, no Word/Excel/PowerPoint?
 
@@ -144,7 +145,7 @@ On a clean install of this add-on Nextcloud Office offers 41 types, including `d
 
 1. **Reload the browser** (Ctrl+F5) or log out and in. The list of supported types is loaded when the Files page opens.
 2. **Update to 35.0.2-7 or later and restart.** The add-on then refreshes Office's cached file-type list itself. Look for `Nextcloud Office file-type list refreshed` in the log.
-3. Run `nc-diag`. It must show `wopi_url` set and `activate-config : OK`. If it says Nextcloud Office has no server address yet, set `public_url` and restart.
+3. Run `nc-diag`. It must show `wopi_url` set and `activate-config : OK`. If it says Nextcloud Office has no server address yet, set `public_url` (or put your LAN address, e.g. `192.168.1.73:8099`, first in `trusted_domains`) and restart.
 4. In Nextcloud → *Administration settings → Nextcloud Office*, make sure **Restrict usage to specific groups** is empty (or contains your user's group) and the built-in server is selected.
 5. Still nothing? Refresh manually from the add-on container: `docker exec addon_<slug> runuser -u www-data -- php /data/nextcloud/html/occ richdocuments:activate-config`.
 6. New files: use *+ New → New document / spreadsheet / presentation*. Existing `.docx`, `.xlsx`, `.pptx` files open by clicking them.
