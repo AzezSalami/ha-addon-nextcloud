@@ -94,6 +94,10 @@ dx curl -fsSk https://127.0.0.1:443/status.php | grep '"installed":true' >/dev/n
 docker logs "$P-nc" 2>&1 | grep 'certificate has EXPIRED' >/dev/null && ok "loud warning logged for the expired certificate" || bad "no expiry warning logged"
 dx bash -c "openssl s_client -connect 127.0.0.1:443 -CAfile /ssl/expired.pem </dev/null 2>&1" | grep 'certificate has expired' >/dev/null && ok "clients still see the certificate as expired (nothing is hidden)" || bad "client did not see expiry"
 
+echo "### switching ssl back off must still start (mod_ssl stays enabled in the container after an ssl run)"
+setopts false false; docker restart -t 30 "$P-nc" >/dev/null; ready 300 && ok "starts again with ssl switched back to false" || { bad "no start after ssl true -> false"; docker logs "$P-nc" 2>&1 | tail -n 6; }
+dx curl -fsS -H 'Host: localhost' http://127.0.0.1:443/status.php | grep '"installed":true' >/dev/null && ok "plain HTTP is served on 443 again" || bad "443 not plain HTTP after switching back"
+
 echo "### bad certificates are refused with a clear message"
 docker run --rm -v "$P-data":/data -e OPT="$(opts true false | jq '.keyfile="other.key"')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'
 docker restart -t 30 "$P-nc" >/dev/null; sleep 12

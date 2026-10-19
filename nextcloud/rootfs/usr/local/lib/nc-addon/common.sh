@@ -128,3 +128,16 @@ office_refresh() {
     [ -z "$cb" ] || occ config:app:set richdocuments wopi_callback_url --value="$cb" >/dev/null 2>&1 || true
     return $rc
 }
+
+# office_base_url: the address Nextcloud Office (the built-in server) is bound to; prints nothing if there is none.
+# Browsers may only start the built-in server through the address Nextcloud itself is opened on (Nextcloud's
+# Content-Security-Policy), so this is the one address on which documents open: public_url, else the first
+# LAN address in trusted_domains (https when ssl is on). "localhost" is not an address other devices can use.
+office_base_url() {
+    local pu first
+    pu="$(opt public_url)"
+    if [ -n "$pu" ]; then printf '%s' "$pu"; return 0; fi
+    first="$(head -n1 "${NC_TRUSTED_FILE:-/run/nc-addon/trusted_domains}" 2>/dev/null || true)"
+    case "$first" in ""|localhost|localhost:*) return 0 ;; esac
+    if [ "$(opt ssl)" = true ]; then printf 'https://%s' "$first"; else printf 'http://%s' "$first"; fi
+}

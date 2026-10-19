@@ -1,5 +1,5 @@
 name: Nextcloud
-version: "35.0.2-8"
+version: "35.0.2-9"
 slug: nextcloud_official
 description: Nextcloud on the official Debian (glibc) image with Nextcloud Office and the built-in CODE server.
 url: https://github.com/AzezSalami/ha-addon-nextcloud

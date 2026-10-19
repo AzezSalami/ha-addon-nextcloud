@@ -1,5 +1,11 @@
 # Changelog
 
+## 35.0.2-9
+* **Fix:** switching `ssl` from `true` back to `false` made Apache refuse to start (`Apache exited unexpectedly (code 1)`): mod_ssl stayed enabled in the container and port 443 was declared twice. mod_ssl is now disabled when `ssl` is off.
+* Documented and diagnosed the cause of "Starting the built-in CODE server is taking longer than expected": Nextcloud's browser security policy only lets the page ask the built-in server for its status on the **same address** Nextcloud was opened on, so documents open only on the address Office is bound to (`public_url`, else the first LAN address in `trusted_domains`).
+* The log and `nc-diag` now show that address (`office address`) and `nc-diag` warns (`office_other_addresses`) when other addresses are configured.
+* `force_public_url` now also works when `public_url` is empty: links and redirects are pinned to the first LAN address in `trusted_domains`, so visitors who arrive on another address are sent to the primary one.
+
 ## 35.0.2-8
 * Fix "Nextcloud Office (Collabora) is not configured" when `public_url` is empty: the built-in server address is now taken from the first LAN address in `trusted_domains` (https when `ssl` is on), so normal users can open documents without an admin visiting Files first.
 * With the add-on's own self-signed certificate, the certificate is imported into Nextcloud's trust store, so Office's server-side requests verify it and TLS verification stays on.

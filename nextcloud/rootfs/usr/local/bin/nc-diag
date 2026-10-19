@@ -70,6 +70,18 @@ if nc_installed; then
     add "overwritehost       : $(occ config:system:get overwritehost 2>/dev/null || echo '<unset>')"
     add "trusted_proxies set : $(occ config:system:get trusted_proxies 0 >/dev/null 2>&1 && echo yes || echo 'no (see TRUSTED_PROXIES / options)')"
     add "trusted_domains     : $(occ config:system:get trusted_domains 2>/dev/null | tr '\n' ' ')"
+    # Nextcloud Office's built-in server only starts on the address it is configured for (browser security policy).
+    OFFICE_BASE="$(office_base_url)"
+    add "office address      : ${OFFICE_BASE:-<none yet>}"
+    if [ -n "$OFFICE_BASE" ]; then
+        prim="$(url_host "$OFFICE_BASE")"; others=""
+        while IFS= read -r d; do
+            case "$d" in ""|localhost|localhost:*|"$prim") ;; *) others="$others $d" ;; esac
+        done < <(cat "${NC_TRUSTED_FILE:-/run/nc-addon/trusted_domains}" 2>/dev/null)
+        if [ -n "$others" ] && [ "$(opt force_public_url 2>/dev/null)" != true ]; then
+            finding WARN office_other_addresses "Documents only open on $OFFICE_BASE; opening Nextcloud on$others shows 'Starting the built-in CODE server is taking longer than expected'" "Always use $OFFICE_BASE, or set force_public_url to redirect the other addresses there."
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------- built-in CODE

@@ -60,17 +60,10 @@ if [ "$(opt enable_office)" = true ]; then
     # Pre-configuring it makes the address deterministic, works for non-admin users from the first click and keeps
     # certificate verification on. The address is public_url, or else the first entry of trusted_domains
     # (https when ssl is on). A custom (external) office server is never overwritten.
-    OFFICE_BASE=""
-    if [ -n "$PUBLIC_URL" ]; then
-        OFFICE_BASE="$PUBLIC_URL"
-    else
-        first="$(head -n1 /run/nc-addon/trusted_domains 2>/dev/null || true)"
-        case "$first" in
-            ""|localhost|localhost:*) ;;
-            *) if [ "$(opt ssl)" = true ]; then OFFICE_BASE="https://$first"; else OFFICE_BASE="http://$first"; fi ;;
-        esac
-    fi
+    OFFICE_BASE="$(office_base_url)"
     if [ -n "$OFFICE_BASE" ]; then
+        # Browsers can only start the built-in server through the address Nextcloud is opened on, so say which one it is.
+        log info "Nextcloud Office is bound to $OFFICE_BASE: documents open when Nextcloud is opened on exactly this address (other addresses show 'Starting the built-in CODE server is taking longer than expected'; set force_public_url to redirect them here)."
         # Our own self-signed certificate: let Nextcloud trust it for its server-side requests instead of disabling verification.
         if [ -z "$PUBLIC_URL" ] && [ "$(opt ssl)" = true ] && [ -z "$(opt certfile)" ] && [ -r "$NC_STATE_DIR/ssl-selfsigned/cert.pem" ]; then
             tmpd="$(mktemp -d)"; chmod 755 "$tmpd"

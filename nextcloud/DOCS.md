@@ -17,7 +17,7 @@ Existing install? Do **not** start with admin credentials; follow [../docs/MIGRA
 | `public_url` | empty | Your public address, `https://cloud.example.com` (no path). Added to the trusted domains and used for links in cron jobs and notifications. Web requests keep the address they arrive on (see *HTTPS and local access*). |
 | `internal_url` | empty | Optional callback URL for CODE → Nextcloud (`richdocuments wopi_callback_url`). Leave empty unless diagnostics demand it. |
 | `trusted_domains` | `[]` | Additional hostnames (`public_url` host is automatic; `localhost` if both empty). Managed by the add-on: manual entries are replaced at start. |
-| `force_public_url` | `false` | Pin every link and redirect to `public_url`, even for visitors using the LAN address. Only needed if your proxy does not forward the original `Host` and `X-Forwarded-Proto` headers. |
+| `force_public_url` | `false` | Pin every link and redirect to the primary address (`public_url`, or else the first LAN address in `trusted_domains`), so visitors on any other address are sent there. Use it if your proxy does not forward the original `Host` and `X-Forwarded-Proto` headers, or to make Nextcloud Office work whichever address people start from. |
 | `ssl` | `false` | Serve the web interface over HTTPS with a certificate from Home Assistant's `/ssl` folder. |
 | `certfile`, `keyfile` | empty | Certificate and key file names inside Home Assistant's `/ssl` folder (no directories). **Leave both empty** to let the add-on generate a self-signed certificate for the addresses in `trusted_domains`. Used only when `ssl` is `true`. |
 | `ssl_allow_expired` | `false` | Start even if the configured certificate has expired. The log then carries a loud warning on every start and browsers will warn or refuse the connection until you renew it. Only expiry is excused: a missing, invalid or mismatched certificate and key still stop the add-on. |
@@ -137,6 +137,24 @@ Nextcloud Office must know the address of the built-in server, and browsers load
   "Nextcloud Office (Collabora) is not configured" until that happens, and that upstream auto-setup also turns off TLS verification for the built-in server. Avoid it by setting `public_url` or a LAN address in `trusted_domains`.
 * A custom office server entered in the Nextcloud Office admin settings is never overwritten.
 * `nc-diag` warns "Nextcloud Office has no server address yet" until an address exists, and shows the real error if Nextcloud cannot reach the built-in server.
+
+## Documents open on one address only
+
+Symptom: opening a document shows **"Starting the built-in CODE server …"** and then **"Document loading failed – Starting the built-in CODE server is taking longer than expected"**.
+
+Cause (reproduced in a real browser): before loading a document, Nextcloud Office asks the built-in server for its status from your browser. Nextcloud's own Content-Security-Policy only lets the page talk to **its own address**, so when you opened
+Nextcloud on one address (say `homeassistant.local:8099`) but Office is bound to another (say `192.168.1.73:8099`), the browser blocks the request and the viewer gives up after 30 seconds. The console says
+`Connecting to '…/proxy.php?status' violates the following Content Security Policy directive: "connect-src 'self'"`.
+
+Office is bound to the address shown in the add-on log (`Nextcloud Office is bound to …`) and by `nc-diag` (`office address`): `public_url` if set, otherwise the first LAN address in `trusted_domains`.
+
+Fix, pick one:
+
+1. **Use that exact address** (scheme, host and port) for Nextcloud. Bookmark it; the *Open Web UI* button uses whatever address you use for Home Assistant, so put that same address first in `trusted_domains`
+   (for example `homeassistant.local:8099` if that is how you reach Home Assistant).
+2. **Set `force_public_url` to `true`.** Visitors who arrive on a different address are then redirected to the primary one when they open a page that needs a login redirect. A browser tab that is already logged in on another
+   address keeps failing until you open the primary address.
+3. Use a single address everywhere (for example `public_url` with a local DNS entry for the domain).
 
 ## Only Markdown opens, no Word/Excel/PowerPoint?
 

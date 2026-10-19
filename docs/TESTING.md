@@ -108,3 +108,12 @@ Reproduced "Nextcloud Office (Collabora) is not configured" (empty `public_url` 
 receives a configured Office with docx/xlsx/pptx, `nc-diag` reports `activate-config OK`; with `ssl` + the self-signed certificate the certificate is imported into Nextcloud's trust store, `wopi_url` is https,
 TLS verification for Office stays on and `activate-config` succeeds. A loopback design (server address 127.0.0.1 plus a separate browser address) was tried and rejected: `activate-config` overwrites the public
 address with the discovered one. Not verified: reaching the host's LAN IP and published port from inside the add-on container on a real Home Assistant (the usual Docker behaviour, but untested here).
+
+### "Starting the built-in CODE server is taking longer than expected" (2026-10-19)
+
+Reproduced with a real browser (the app's Browser pane against a local test instance): Nextcloud on `localhost:8099` while Office is bound to `127.0.0.1:8099` fails with the CSP error `connect-src 'self'` on `…/proxy.php?status`.
+With matching addresses the same `.ods` file opens, the Collabora spreadsheet UI renders and the `/cool/ws` long-polling requests return 200, i.e. editing works end to end in the add-on. A server-side conversion of a real `.ods`
+to PDF through the built-in server takes about a second warm. Ideas tried and dropped: CORS headers (the block is CSP, not CORS); a `proxy.php`-free alias for the server address; a loopback server address (`activate-config` overwrites the public address with what it discovers).
+`tests/integration/office.sh` now also checks the bound-address log line, the `nc-diag` address and warning, and the `force_public_url` redirect when `public_url` is empty. Unit tests: 136/136.
+
+Bug found by the extended Office test (2026-10-19): after a run with `ssl: true`, switching `ssl` back to `false` stopped Apache from starting (duplicate `Listen 443`). Fixed (mod_ssl is disabled when ssl is off) and covered by a new check in `tests/integration/ssl.sh` (29 checks, 0 failed). `office.sh`: 18 checks, 0 failed. Unit tests: 136/136.

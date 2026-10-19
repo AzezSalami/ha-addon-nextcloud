@@ -72,5 +72,27 @@ occ security:certificates | grep nextcloud-addon-selfsigned >/dev/null && ok "ce
 for _ in $(seq 1 30); do dx nc-diag 2>&1 | grep -F 'activate-config      : OK' >/dev/null && { GOOD=1; break; }; sleep 5; done
 [ "${GOOD:-0}" = 1 ] && ok "activate-config OK over HTTPS with the self-signed certificate (verified, not bypassed)" || { bad "activate-config over HTTPS"; dx nc-diag 2>&1 | grep -A3 'activate-config'; }
 
+echo "### the bound address is reported; other addresses are warned about; force_public_url moves visitors to the primary address"
+setopts_x() { docker run --rm -v "$P-data":/data -e OPT="$(opts false | jq --argjson f "$1" '.force_public_url=$f | .trusted_domains=["ncoffice:443","other:443"]')" --entrypoint sh "$IMG" -c 'printf "%s" "$OPT" > /data/options.json'; }
+since() { date -u +%Y-%m-%dT%H:%M:%SZ; }   # the Z matters: without it docker reads local time
+wait_since() { local i=0; sleep 5; while [ "$i" -lt "$3" ]; do docker logs --since "$2" "$P-nc" 2>&1 | grep -F "$1" >/dev/null && return 0; sleep 5; i=$((i + 5)); done; return 1; }
+location_for() { dx curl -s -o /dev/null -D - -H "Host: $1" http://127.0.0.1:443/ | grep -i '^location' | tr -d '\r'; }
+
+TS="$(since)"; setopts_x false; docker restart -t 30 "$P-nc" >/dev/null
+wait_since 'file-type list refreshed' "$TS" 400 || bad "restart (force off)"
+docker logs --since "$TS" "$P-nc" 2>&1 | grep -F 'Nextcloud Office is bound to http://ncoffice:443' >/dev/null && ok "log names the address Office is bound to" || bad "no 'bound to' log line"
+D="$(dx nc-diag 2>&1)"
+echo "$D" | grep -F 'office address      : http://ncoffice:443' >/dev/null && ok "nc-diag shows the office address" || bad "nc-diag office address"
+echo "$D" | grep -F 'office_other_addresses' >/dev/null && ok "nc-diag warns that other addresses (other:443) will not open documents" || bad "no warning about other addresses"
+L="$(location_for other:443)"; echo "  visitor on other:443 (force off) -> ${L:-<no redirect>}"
+echo "$L" | grep -F 'other:443' >/dev/null && ok "force_public_url off: other addresses are left alone" || bad "unexpected redirect with force off: $L"
+
+TS="$(since)"; setopts_x true; docker restart -t 30 "$P-nc" >/dev/null
+wait_since 'file-type list refreshed' "$TS" 400 || bad "restart (force on)"
+docker logs --since "$TS" "$P-nc" 2>&1 | grep -F 'force_public_url: links are pinned to http://ncoffice:443' >/dev/null && ok "force_public_url pins to the first trusted address when public_url is empty" || bad "force pin log line missing"
+L="$(location_for other:443)"; echo "  visitor on other:443 (force on)  -> ${L:-<no redirect>}"
+echo "$L" | grep -F 'http://ncoffice:443/' >/dev/null && ok "visitors on another address are sent to the primary address" || bad "no redirect to the primary address: $L"
+dx nc-diag 2>&1 | grep -F 'office_other_addresses' >/dev/null && bad "warning still shown with force_public_url on" || ok "no warning once force_public_url is on"
+
 echo "failures: $FAILS"
 [ "$FAILS" = 0 ]

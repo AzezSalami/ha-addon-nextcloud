@@ -127,6 +127,15 @@ before="$(sha256sum "$T/ss/cert.pem")"; ssl_selfsigned_ensure "$T/ss/cert.pem" "
 r=0; [ "$before" = "$(sha256sum "$T/ss/cert.pem")" ] || r=1; eq "unchanged addresses keep the same certificate" "$r" 0
 ssl_selfsigned_ensure "$T/ss/cert.pem" "$T/ss/key.pem" "$(ssl_san_string 192.168.1.99)"
 r=0; [ "$before" != "$(sha256sum "$T/ss/cert.pem")" ] || r=1; eq "changed addresses regenerate the certificate" "$r" 0
+echo "-- office address"
+TF="$T/trusted"; export NC_TRUSTED_FILE="$TF"
+ob() { printf '%s' "$1" >"$T/oo.json"; printf '%s\n' "${@:2}" >"$TF"; NC_OPTIONS_FILE="$T/oo.json" office_base_url; }
+eq "public_url wins" "$(ob '{"public_url":"https://cloud.example.com","ssl":false}' cloud.example.com 192.168.1.73:8099)" "https://cloud.example.com"
+eq "first LAN address, http" "$(ob '{"public_url":"","ssl":false}' 192.168.1.73:8099 homeassistant.local:8099)" "http://192.168.1.73:8099"
+eq "first LAN address, https with ssl" "$(ob '{"public_url":"","ssl":true}' 192.168.1.73:8099)" "https://192.168.1.73:8099"
+eq "localhost is not an address" "$(ob '{"public_url":"","ssl":false}' localhost)" ""
+eq "localhost:port is skipped as the first entry" "$(ob '{"public_url":"","ssl":false}' localhost:8099 192.168.1.73:8099)" ""
+eq "empty list gives nothing" "$(ob '{"public_url":"","ssl":false}')" ""
 grep -q '^Listen 443$' "$T/ui.conf" && ! grep -q SSLEngine "$T/ui.conf"; eq "ssl off: plain listener on 443" "$?" 0
 echo "-- architecture / runtime detection"
 eq "x86_64" "$(NC_UNAME_M=x86_64 detect_arch)" x86_64

@@ -125,10 +125,19 @@ if [ -n "$PUBLIC_URL" ]; then
     # add-on stays reachable by LAN address. force_public_url pins them to public_url for proxies that do not
     # forward them correctly, at the price of redirecting local visitors to the public address.
     OVERWRITECLIURL="$PUBLIC_URL"; export OVERWRITECLIURL
-    if [ "$(opt force_public_url)" = true ]; then
-        OVERWRITEPROTOCOL="$(url_scheme "$PUBLIC_URL")"; OVERWRITEHOST="$(url_host "$PUBLIC_URL")"
-        export OVERWRITEPROTOCOL OVERWRITEHOST
-        log info "force_public_url: links are pinned to $PUBLIC_URL"
+fi
+# force_public_url pins links and redirects to the primary address (public_url, or else the first LAN address in
+# trusted_domains), so visitors on any other address are moved there. That matters for Nextcloud Office: its built-in
+# server only starts on the address it is configured for, and on other addresses documents fail with
+# "Starting the built-in CODE server is taking longer than expected".
+if [ "$(opt force_public_url)" = true ]; then
+    PRIMARY_URL="$(office_base_url)"
+    if [ -n "$PRIMARY_URL" ]; then
+        OVERWRITEPROTOCOL="$(url_scheme "$PRIMARY_URL")"; OVERWRITEHOST="$(url_host "$PRIMARY_URL")"; OVERWRITECLIURL="$PRIMARY_URL"
+        export OVERWRITEPROTOCOL OVERWRITEHOST OVERWRITECLIURL
+        log info "force_public_url: links are pinned to $PRIMARY_URL"
+    else
+        log warning "force_public_url is on but there is no address to pin to: set public_url or put your LAN address (not localhost) first in trusted_domains"
     fi
 fi
 
